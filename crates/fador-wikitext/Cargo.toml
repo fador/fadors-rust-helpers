@@ -1,0 +1,21 @@
+[package]
+name = "fador-wikitext"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Bounded MediaWiki-compatible wikitext parser with resolver, message and configuration traits"
+readme = "README.md"
+keywords = ["wikitext", "mediawiki", "parser", "html", "wiki"]
+categories = ["parser-implementations", "text-processing", "web-programming"]
+publish = false
+
+[dependencies]
+fador-core = { workspace = true }
+fador-i18n = { workspace = true }
+fador-markup = { workspace = true }
+
+[dev-dependencies]
+fador-testutil = { path = "../fador-testutil" }
