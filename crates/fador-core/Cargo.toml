@@ -13,3 +13,6 @@ categories = ["encoding", "cryptography", "web-programming"]
 publish = false
 
 [dependencies]
+
+[dev-dependencies]
+fador-testutil = { path = "../fador-testutil" }

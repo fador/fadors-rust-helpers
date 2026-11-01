@@ -1,0 +1,19 @@
+[package]
+name = "fador-mysql"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Dependency-free MySQL/MariaDB wire client and connection pool"
+readme = "README.md"
+keywords = ["mysql", "mariadb", "database", "pool"]
+categories = ["database"]
+publish = false
+
+[dependencies]
+fador-core = { workspace = true }
+
+[dev-dependencies]
+fador-testutil = { path = "../fador-testutil" }

@@ -5,6 +5,22 @@
 //! exercising thousands of malformed inputs in normal `cargo test`.
 
 #![allow(dead_code)]
+#![allow(missing_docs)]
+
+/// Case count for a seeded fuzz test.
+///
+/// The default keeps the workspace suite fast. A deeper pass is opt-in through
+/// `FADOR_FUZZ_ITERATIONS` (or the legacy `KESKUSTELU_FUZZ_ITERATIONS`), for
+/// example `FADOR_FUZZ_ITERATIONS=200000 cargo test --workspace`.
+pub fn iterations(default: usize) -> usize {
+    std::env::var("FADOR_FUZZ_ITERATIONS")
+        .or_else(|_| std::env::var("KESKUSTELU_FUZZ_ITERATIONS"))
+        .ok()
+        .and_then(|value| value.trim().parse::<usize>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(default)
+        .min(2_000_000)
+}
 
 pub struct Rng {
     state: u64,

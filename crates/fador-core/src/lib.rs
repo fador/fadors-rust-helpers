@@ -22,7 +22,7 @@ pub mod random;
 pub mod util;
 
 #[cfg(test)]
-mod testutil;
+pub(crate) use fador_testutil as testutil;
 
 pub use cache::TimedCache;
 pub use imageinfo::ImageInfo;
