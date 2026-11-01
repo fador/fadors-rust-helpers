@@ -310,7 +310,8 @@ fn fuzz_template_compiler_and_renderer() {
     for _ in 0..iterations(3_000) {
         let mut source = String::new();
         for _ in 0..seed.below(40) {
-            source.push_str(seed.pick(&tokens));
+            let token = *seed.pick(&tokens);
+            source.push_str(token);
         }
         match engine.validate_source("fuzz.html", &source) {
             Ok(()) => {
