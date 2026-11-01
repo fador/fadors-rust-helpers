@@ -1,0 +1,18 @@
+[package]
+name = "fador-markup"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Dependency-free HTML escaping, URL, censoring and highlighting leaf helpers"
+readme = "README.md"
+keywords = ["html", "escape", "markup", "url", "highlight"]
+categories = ["text-processing", "web-programming"]
+publish = false
+
+[dependencies]
+
+[dev-dependencies]
+fador-testutil = { path = "../fador-testutil" }
