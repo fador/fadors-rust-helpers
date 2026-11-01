@@ -1,0 +1,18 @@
+[package]
+name = "fador-http"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Hardened, dependency-free HTTP/1.1 server with bounded request parsing and strict response framing"
+readme = "README.md"
+keywords = ["http", "server", "http1", "web"]
+categories = ["web-programming::http-server"]
+publish = false
+
+[dependencies]
+
+[dev-dependencies]
+fador-testutil = { path = "../fador-testutil" }
