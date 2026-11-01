@@ -1,0 +1,19 @@
+[package]
+name = "fador-i18n"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Dependency-free language packs, phpBB plural rules, PHP date and strftime formatting, and embedded IANA time-zone data"
+readme = "README.md"
+keywords = ["i18n", "locale", "timezone", "plural", "strftime"]
+categories = ["internationalization", "date-and-time"]
+publish = false
+
+[dependencies]
+fador-core = { workspace = true }
+
+[dev-dependencies]
+fador-testutil = { path = "../fador-testutil" }
