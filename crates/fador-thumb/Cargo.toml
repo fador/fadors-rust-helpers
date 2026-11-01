@@ -1,0 +1,19 @@
+[package]
+name = "fador-thumb"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Bounded, phpBB-compatible image thumbnail planning, rendering and atomic writing"
+readme = "README.md"
+keywords = ["thumbnail", "image", "jpeg", "png"]
+categories = ["multimedia::images"]
+publish = false
+
+[dependencies]
+image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
+
+[dev-dependencies]
+fador-testutil = { path = "../fador-testutil" }
