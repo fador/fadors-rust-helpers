@@ -1,0 +1,31 @@
+[package]
+name = "fador-services"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Dependency-free SMTP, captcha, cron scheduler and feed rendering services"
+readme = "README.md"
+keywords = ["smtp", "captcha", "cron", "atom", "rss"]
+categories = ["email", "web-programming"]
+publish = false
+
+[dependencies]
+fador-core = { workspace = true }
+fador-compress = { workspace = true, optional = true }
+
+[dev-dependencies]
+fador-testutil = { path = "../fador-testutil" }
+
+[features]
+default = ["mail", "captcha", "cron", "feed"]
+# SMTP, sendmail and log mail transport with RFC 5322 rendering.
+mail = []
+# PNG and WAV visual/audio challenges plus third-party challenge verification.
+captcha = ["dep:fador-compress"]
+# Heartbeat leader lock, run lock, atomic status file and scheduler thread.
+cron = []
+# RSS 0.92/2.0, Atom 1.0 and RDF (RSS 1.0) feed rendering.
+feed = []
