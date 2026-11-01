@@ -1,0 +1,18 @@
+[package]
+name = "fador-phpbb-template"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Compiler and renderer for the phpBB template dialect"
+readme = "README.md"
+keywords = ["phpbb", "template", "twig", "html", "renderer"]
+categories = ["template-engine", "web-programming"]
+publish = false
+
+[dependencies]
+
+[dev-dependencies]
+fador-testutil = { path = "../fador-testutil" }
