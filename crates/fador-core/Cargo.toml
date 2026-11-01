@@ -1,0 +1,15 @@
+[package]
+name = "fador-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Bounded, dependency-free primitives shared by the fador servers"
+readme = "README.md"
+keywords = ["crypto", "json", "multipart", "cache", "path"]
+categories = ["encoding", "cryptography", "web-programming"]
+publish = false
+
+[dependencies]

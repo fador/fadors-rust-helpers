@@ -14,3 +14,11 @@ lockstep across all crates while the workspace is `0.x`.
 - Configurable output limits and typed decode errors.
 - Known-vector tests against zlib/gzip output, including a dynamic-Huffman
   stream, plus a seeded malformed-input fuzz test.
+- `fador-core`: SHA-1/256/512, MD5, HMAC, PBKDF2, BLAKE2b, CRC-32, base64 and
+  hex; OS-backed random bytes with a fallible API; bounded JSON reader/writer;
+  bounded PHP serialisation reader/writer; bounded `multipart/form-data`
+  parser; PNG/JPEG/GIF header inspection; TTL cache; platform-aware path
+  sandbox; HTML, URL, form, date and MediaWiki title helpers.
+- `fador-core` fixes the old TTL cache's zero-capacity bug, adds an oldest-entry
+  eviction fallback and rejects non-finite PHP floats, duplicate PHP keys and
+  invalid UTF-8 slices.

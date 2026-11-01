@@ -49,4 +49,6 @@ backup files and PNG IDAT chunks.
 
 ## License
 
-MIT. See the repository [LICENSE](../../LICENSE) and [NOTICE](../../NOTICE).
+MIT. See the repository
+[LICENSE](https://github.com/fador/fadors-rust-helpers/blob/main/LICENSE) and
+[NOTICE](https://github.com/fador/fadors-rust-helpers/blob/main/NOTICE).
