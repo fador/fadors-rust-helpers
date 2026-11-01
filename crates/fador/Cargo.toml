@@ -1,0 +1,56 @@
+[package]
+name = "fador"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Facade and prelude for the fador Rust helpers"
+readme = "README.md"
+keywords = ["http", "mysql", "forum", "wiki", "helpers"]
+categories = ["web-programming"]
+publish = false
+
+[features]
+default = ["core", "compress", "http", "mysql", "auth", "i18n", "markup"]
+core = ["dep:fador-core"]
+compress = ["dep:fador-compress"]
+http = ["dep:fador-http"]
+mysql = ["dep:fador-mysql"]
+auth = ["dep:fador-auth"]
+i18n = ["dep:fador-i18n"]
+markup = ["dep:fador-markup"]
+services = ["dep:fador-services"]
+thumbnails = ["dep:fador-thumb"]
+phpbb-template = ["dep:fador-phpbb-template"]
+smf-theme = ["dep:fador-smf-theme"]
+wikitext = ["dep:fador-wikitext"]
+all = [
+    "core",
+    "compress",
+    "http",
+    "mysql",
+    "auth",
+    "i18n",
+    "markup",
+    "services",
+    "thumbnails",
+    "phpbb-template",
+    "smf-theme",
+    "wikitext",
+]
+
+[dependencies]
+fador-auth = { workspace = true, optional = true }
+fador-compress = { workspace = true, optional = true }
+fador-core = { workspace = true, optional = true }
+fador-http = { workspace = true, optional = true }
+fador-i18n = { workspace = true, optional = true }
+fador-markup = { workspace = true, optional = true }
+fador-mysql = { workspace = true, optional = true }
+fador-phpbb-template = { workspace = true, optional = true }
+fador-services = { workspace = true, optional = true }
+fador-smf-theme = { workspace = true, optional = true }
+fador-thumb = { workspace = true, optional = true }
+fador-wikitext = { workspace = true, optional = true }

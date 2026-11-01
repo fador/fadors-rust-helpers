@@ -27,6 +27,7 @@ jobs:
       - run: cargo test --workspace
       - run: cargo test -p fador-auth --no-default-features
       - run: cargo test -p fador-services --no-default-features
+      - run: cargo test -p fador --all-features
       - run: cargo doc --workspace --no-deps
         env:
           RUSTDOCFLAGS: -D warnings

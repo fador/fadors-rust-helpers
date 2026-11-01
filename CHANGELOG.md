@@ -65,3 +65,7 @@ lockstep across all crates while the workspace is `0.x`.
   the database through `WikiResolver`, `ParserConfig` and `MessageSource`;
   titles, namespaces, templates, parser functions, references, tables, links,
   images and sanitising are included.
+- `fador`: a facade with feature-gated module re-exports and a `prelude` for
+  the common types. Default features cover core, compression, HTTP, MySQL,
+  authentication, i18n and markup; `all` adds services, thumbnails and the
+  three dialect engines.

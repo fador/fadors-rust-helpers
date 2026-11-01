@@ -8,8 +8,9 @@ Shared, dependency-free Rust helpers extracted from the
 The repository is a Cargo workspace: each crate is published independently,
 but all of them share one history, one CI pipeline and one release process.
 
-**Status: foundation complete.** Twelve crates are present today. The remaining
-work is the `fador` facade and prelude.
+**Status: foundation complete.** All planned crates are present, including the
+`fador` facade and prelude. The next step is migrating the three application
+repositories onto the published crates.
 
 ## Crates
 
@@ -28,7 +29,7 @@ work is the `fador` facade and prelude.
 | `fador-smf-theme` | SMF PHP-subset theme engine | available |
 | `fador-wikitext` | MediaWiki-compatible wikitext parser | available |
 | `fador-testutil` | seeded fuzz helpers used only by the workspace tests | internal |
-| `fador` | facade and prelude | planned |
+| `fador` | facade and prelude, feature-gated re-exports | available |
 
 ## Design rules
 

@@ -11,6 +11,7 @@ repository = "https://github.com/fador/fadors-rust-helpers"
 authors = ["Marko Viitanen <fador@iki.fi>"]
 
 [workspace.dependencies]
+fador = { path = "crates/fador", version = "0.1.0" }
 fador-auth = { path = "crates/fador-auth", version = "0.1.0" }
 fador-compress = { path = "crates/fador-compress", version = "0.1.0" }
 fador-core = { path = "crates/fador-core", version = "0.1.0" }
