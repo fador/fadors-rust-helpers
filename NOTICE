@@ -9,16 +9,23 @@ this repository under the MIT license.
 Third-party notices
 -------------------
 
-No third-party code is currently included in fador-compress. The codec was
-written for the smf project and is relicensed here by its copyright holder.
+The crates in this repository are extracted from the author's own keskustelu,
+smf and wiki code and are relicensed here by the copyright holder. No
+third-party source code is included.
 
-Future modules will carry the appropriate notice:
+The following data and constants are not original source code:
+
+- `fador-i18n/data/tzdata.bin` is derived from the IANA time-zone database,
+  which is public domain.
+- The Blowfish P-array and S-box constants in `fador-auth` are the standard
+  public-domain constants used by bcrypt implementations.
+
+Future ports will carry the appropriate notice:
 
 - Ports from Simple Machines Forum are BSD-3-Clause. The original copyright
   notice and license text will be reproduced here.
 - Ports from musl/FreeSec (the DES crypt implementation) are MIT/BSD-3-Clause.
   The original notice will be reproduced here.
-- Time-zone data is derived from the IANA tz database, which is public domain.
 
 No template, style, image or language-pack content from phpBB, SMF or
 MediaWiki is included in this repository.

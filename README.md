@@ -8,9 +8,9 @@ Shared, dependency-free Rust helpers extracted from the
 The repository is a Cargo workspace: each crate is published independently,
 but all of them share one history, one CI pipeline and one release process.
 
-**Status: early.** Three crates are present today: `fador-compress`,
-`fador-core` and `fador-mysql`. The rest are extracted one at a time, with the
-original test suites and fuzz corpora.
+**Status: foundation complete.** Eight crates are present today. The remaining
+work is the optional services crate, the facade, and the SMF/wikitext dialect
+engines.
 
 ## Crates
 
@@ -19,14 +19,14 @@ original test suites and fuzz corpora.
 | `fador-compress` | gzip, zlib and raw DEFLATE codec | available |
 | `fador-core` | crypto, random, JSON, PHP serialization, multipart, image headers, utilities, cache, path sandbox | available |
 | `fador-mysql` | MySQL/MariaDB wire client, authentication and connection pool | available |
+| `fador-http` | hardened HTTP/1.1 server, response framing, request smuggling defenses, proxy/IP resolution, gzip negotiation | available |
+| `fador-auth` | cookies, sessions, CSRF, password formats, bans, throttling, permission primitives | available |
+| `fador-i18n` | language packs, plural rules, PHP/strftime dates, embedded timezone database | available |
+| `fador-markup` | escaping, URL policy, censors, smiley matching, Unicode search highlighting | available |
+| `fador-phpbb-template` | phpBB template compiler and sandboxed template loader | available |
 | `fador-testutil` | seeded fuzz helpers used only by the workspace tests | internal |
-| `fador-http` | hardened HTTP/1.1 server, framing, proxy handling, static assets, limits, access log | planned |
-| `fador-auth` | sessions, cookies, CSRF, password formats, bans, throttling | planned |
-| `fador-i18n` | language packs, plural rules, dates, timezone data | planned |
-| `fador-markup` | escaping, URL policy, censors, smileys, search highlighting | planned |
 | `fador-services` | SMTP, captcha, cron, feeds, webhook spool, thumbnails | planned |
 | `fador` | facade and prelude | planned |
-| `fador-phpbb-template` | phpBB template compiler | planned |
 | `fador-smf-theme` | SMF PHP-subset theme engine | planned |
 | `fador-wikitext` | MediaWiki wikitext parser | planned |
 
@@ -40,7 +40,8 @@ original test suites and fuzz corpora.
   settings stay in the application repositories.
 - **One codec.** `fador-compress` is the only DEFLATE implementation used by
   the HTTP, backup and PNG paths.
-- **MSRV 1.88**, edition 2021, `#![forbid(unsafe_code)]`.
+- **MSRV 1.88**, edition 2021, `#![deny(unsafe_code)]`. The only exception is
+  the isolated Windows CSPRNG FFI in `fador-core::random`.
 
 ## Using a crate
 

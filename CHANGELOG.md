@@ -31,3 +31,24 @@ lockstep across all crates while the workspace is `0.x`.
   write.
 - `fador-testutil`: seeded PRNG, hostile-string corpus and fuzz iteration
   control shared by the workspace tests.
+- `fador-http`: hardened HTTP/1.1 server merging the SMF response-framing engine
+  with the keskustelu request hardening. Chunked responses, HEAD/204/304/206,
+  reserved-header protection, redirect sanitisation, gzip negotiation,
+  rightmost-untrusted `X-Forwarded-For`, `peer_ip`, `trust_local_proxy`,
+  `//host` rejection, multipart text fields and a buffered line reader.
+- `fador-http` fixes the short-file framing bug on both Content-Length and
+  chunked paths and adds an end-to-end HEAD/204/304/206 socket test.
+- `fador-auth`: cookie codec, session ids/policies/stores, remember-me,
+  phpBB/SMF/HMAC CSRF schemes, phpass/bcrypt/Argon2id/SMF/MediaWiki password
+  verifiers, ban patterns with IPv4/IPv6 CIDR, ban cache, fixed-window
+  throttling and generic permission primitives. Expensive formats are feature
+  gated; no database adapters.
+- `fador-i18n`: language-pack loader with fallback, all 16 phpBB plural rules,
+  placeholder formatting, PHP `date()` and SMF `strftime` formatting, and a
+  merged timezone backend with an embedded 497-zone KTZ1 archive plus POSIX
+  footer extrapolation for post-2038 dates.
+- `fador-markup`: escape policies, URL scheme policy, censor, smiley/autolink
+  code matching, markup stripping and Unicode/tag-safe search highlighting.
+- `fador-phpbb-template`: the phpBB template compiler, expression engine,
+  context bridge, event assets and sandboxed loader, extracted without any
+  phpBB template/style content.

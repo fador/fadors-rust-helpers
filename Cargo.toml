@@ -11,7 +11,12 @@ repository = "https://github.com/fador/fadors-rust-helpers"
 authors = ["Marko Viitanen <fador@iki.fi>"]
 
 [workspace.dependencies]
+fador-auth = { path = "crates/fador-auth", version = "0.1.0" }
 fador-compress = { path = "crates/fador-compress", version = "0.1.0" }
 fador-core = { path = "crates/fador-core", version = "0.1.0" }
+fador-http = { path = "crates/fador-http", version = "0.1.0" }
+fador-i18n = { path = "crates/fador-i18n", version = "0.1.0" }
+fador-markup = { path = "crates/fador-markup", version = "0.1.0" }
 fador-mysql = { path = "crates/fador-mysql", version = "0.1.0" }
+fador-phpbb-template = { path = "crates/fador-phpbb-template", version = "0.1.0" }
 fador-testutil = { path = "crates/fador-testutil", version = "0.1.0" }
