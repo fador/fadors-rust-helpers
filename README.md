@@ -8,9 +8,8 @@ Shared, dependency-free Rust helpers extracted from the
 The repository is a Cargo workspace: each crate is published independently,
 but all of them share one history, one CI pipeline and one release process.
 
-**Status: foundation complete.** Eight crates are present today. The remaining
-work is the optional services crate, the facade, and the SMF/wikitext dialect
-engines.
+**Status: foundation complete.** Twelve crates are present today. The remaining
+work is the `fador` facade and prelude.
 
 ## Crates
 
@@ -24,16 +23,17 @@ engines.
 | `fador-i18n` | language packs, plural rules, PHP/strftime dates, embedded timezone database | available |
 | `fador-markup` | escaping, URL policy, censors, smiley matching, Unicode search highlighting | available |
 | `fador-phpbb-template` | phpBB template compiler and sandboxed template loader | available |
+| `fador-services` | SMTP, captcha, cron and RSS/Atom feeds | available |
+| `fador-thumb` | image thumbnails via the optional `image` crate | available |
+| `fador-smf-theme` | SMF PHP-subset theme engine | available |
+| `fador-wikitext` | MediaWiki-compatible wikitext parser | available |
 | `fador-testutil` | seeded fuzz helpers used only by the workspace tests | internal |
-| `fador-services` | SMTP, captcha, cron, feeds, webhook spool, thumbnails | planned |
 | `fador` | facade and prelude | planned |
-| `fador-smf-theme` | SMF PHP-subset theme engine | planned |
-| `fador-wikitext` | MediaWiki wikitext parser | planned |
 
 ## Design rules
 
-- **Standard library only** unless a crate explicitly opts into an optional
-  dependency (`image` for thumbnails, `ureq` for HTTPS webhooks).
+- **Standard library only** except `fador-thumb`, which opts into the `image`
+  crate for JPEG/PNG/GIF/WebP decoding.
 - **Bounded parsers.** Every untrusted input has an explicit size, depth or
   output limit. A malformed input returns an error; it never exhausts a worker.
 - **No schema knowledge.** Table names, template dialects, routes and board

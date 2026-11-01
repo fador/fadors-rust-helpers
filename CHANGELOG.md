@@ -52,3 +52,16 @@ lockstep across all crates while the workspace is `0.x`.
 - `fador-phpbb-template`: the phpBB template compiler, expression engine,
   context bridge, event assets and sandboxed loader, extracted without any
   phpBB template/style content.
+- `fador-services`: SMTP/sendmail/log mail transport with strict address and
+  header validation, PNG/WAV captcha rendering and provider verification,
+  leader/run-lock cron scheduling with an atomic status file, and a clean-room
+  RSS/Atom/RDF feed writer. Each module is feature gated.
+- `fador-thumb`: phpBB-compatible thumbnail planning and rendering for JPEG,
+  PNG, GIF and WebP, with `image::Limits` bounds and atomic writes.
+- `fador-smf-theme`: the sandboxed PHP-subset lexer/parser/evaluator and SMF
+  theme resolver, with SMF-specific host functions behind a `HostFunctions`
+  trait and timezone formatting delegated to `fador-i18n`.
+- `fador-wikitext`: the MediaWiki-compatible wikitext parser, decoupled from
+  the database through `WikiResolver`, `ParserConfig` and `MessageSource`;
+  titles, namespaces, templates, parser functions, references, tables, links,
+  images and sanitising are included.

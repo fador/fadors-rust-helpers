@@ -26,6 +26,7 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
       - run: cargo test -p fador-auth --no-default-features
+      - run: cargo test -p fador-services --no-default-features
       - run: cargo doc --workspace --no-deps
         env:
           RUSTDOCFLAGS: -D warnings
