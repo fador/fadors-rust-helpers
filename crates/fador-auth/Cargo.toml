@@ -1,0 +1,30 @@
+[package]
+name = "fador-auth"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Schema-agnostic authentication, session, cookie, CSRF, password, ban and throttling primitives"
+readme = "README.md"
+keywords = ["authentication", "session", "cookie", "password", "csrf"]
+categories = ["authentication", "web-programming"]
+publish = false
+
+[dependencies]
+fador-core = { workspace = true }
+
+[dev-dependencies]
+fador-testutil = { path = "../fador-testutil" }
+
+[features]
+default = ["bcrypt", "phpass", "argon2", "mediawiki-pbkdf2"]
+# bcrypt verification and the preferred password writer.
+bcrypt = []
+# Portable PHP salted-MD5 (`$P$` / `$H$`) verification.
+phpass = []
+# Argon2id/Argon2i/Argon2d PHC verification.
+argon2 = []
+# MediaWiki PBKDF2 verification and the fallback password writer.
+mediawiki-pbkdf2 = []
