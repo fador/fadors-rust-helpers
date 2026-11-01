@@ -1,0 +1,20 @@
+[package]
+name = "fador-smf-theme"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Sandboxed PHP-subset evaluator and SMF theme resolver for the original SMF template files"
+readme = "README.md"
+keywords = ["template", "php", "smf", "theme", "sandbox"]
+categories = ["template-engine", "parser-implementations"]
+publish = false
+
+[dependencies]
+fador-core = { workspace = true }
+fador-i18n = { workspace = true }
+
+[dev-dependencies]
+fador-testutil = { path = "../fador-testutil" }

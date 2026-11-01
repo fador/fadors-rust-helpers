@@ -1,0 +1,56 @@
+fador-smf-theme
+Copyright (c) 2026 Marko Viitanen
+
+This crate is extracted from the author's own `smf` server, which is licensed
+GPL-2.0-or-later. The copyright holder has relicensed the extracted code in
+this repository under the MIT license.
+
+No Simple Machines Forum source code, template, style, image or language-pack
+content is included. The template files this crate renders are installed by the
+board and stay under their own licences.
+
+Third-party notice
+------------------
+
+The following functions re-implement the documented behaviour of Simple
+Machines Forum 2.x, which is distributed under the BSD 3-Clause License. They
+are independent Rust implementations written from the behaviour the templates
+expect; no SMF source text is copied.
+
+- `format_time()` (the `timeformat()` user/forum offset and
+  "Today"/"Yesterday" rules)
+- `SmfFunctions::call()` entries `create_button`, `allowedto`,
+  `theme_inline_permissions`, `theme_copyright`, `comma_format`,
+  `timeformat`, `cleanXml` and `JavaScriptEscape`
+
+Simple Machines Forum license and copyright notice:
+
+  Copyright (c) 2011-2023, Simple Machines
+  Copyright (c) 2001-2011, Lewis Media
+  All rights reserved.
+
+  Redistribution and use in source and binary forms, with or without
+  modification, are permitted provided that the following conditions are met:
+
+  1. Redistributions of source code must retain the above copyright notice,
+     this list of conditions and the following disclaimer.
+
+  2. Redistributions in binary form must reproduce the above copyright notice,
+     this list of conditions and the following disclaimer in the documentation
+     and/or other materials provided with the distribution.
+
+  3. Neither the name of the copyright holder nor the names of its
+     contributors may be used to endorse or promote products derived from this
+     software without specific prior written permission.
+
+  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+  ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+  LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+  CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+  SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+  INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+  CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+  ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+  POSSIBILITY OF SUCH DAMAGE.
