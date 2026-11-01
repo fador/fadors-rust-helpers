@@ -1,0 +1,13 @@
+[workspace]
+members = ["crates/*"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+license = "MIT"
+repository = "https://github.com/fador/fadors-rust-helpers"
+authors = ["Marko Viitanen <fador@iki.fi>"]
+
+[workspace.dependencies]

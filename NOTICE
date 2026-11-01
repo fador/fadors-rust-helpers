@@ -1,0 +1,24 @@
+fadors-rust-helpers
+Copyright (c) 2026 Marko Viitanen
+
+This repository contains code extracted from the keskustelu, smf and wiki
+projects, which are copyright Marko Viitanen and licensed
+GPL-2.0-or-later. The copyright holder has relicensed the extracted code in
+this repository under the MIT license.
+
+Third-party notices
+-------------------
+
+No third-party code is currently included in fador-compress. The codec was
+written for the smf project and is relicensed here by its copyright holder.
+
+Future modules will carry the appropriate notice:
+
+- Ports from Simple Machines Forum are BSD-3-Clause. The original copyright
+  notice and license text will be reproduced here.
+- Ports from musl/FreeSec (the DES crypt implementation) are MIT/BSD-3-Clause.
+  The original notice will be reproduced here.
+- Time-zone data is derived from the IANA tz database, which is public domain.
+
+No template, style, image or language-pack content from phpBB, SMF or
+MediaWiki is included in this repository.

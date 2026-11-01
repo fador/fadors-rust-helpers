@@ -1,0 +1,15 @@
+[package]
+name = "fador-compress"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Dependency-free gzip, zlib and DEFLATE codec with bounded, checksum-verified decompression"
+readme = "README.md"
+keywords = ["gzip", "zlib", "deflate", "compression"]
+categories = ["compression"]
+publish = false
+
+[dependencies]
