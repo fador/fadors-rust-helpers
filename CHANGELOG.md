@@ -3,6 +3,54 @@
 All notable changes to this workspace are documented here. Versions are
 lockstep across all crates while the workspace is `0.x`.
 
+## 0.2.0 - 2026-11-02
+
+### Security & Hardening
+
+- Comprehensive security audit remediation across all 14 workspace crates.
+- `fador-markup` & `fador-wikitext`: Strict attribute name validation for `data-*`
+  and `aria-*` attributes (`[a-zA-Z0-9_.-]`); tag boundary checks stopping on `/`,
+  `"`, `'`, and `<`; internal control marker (`\u{1}`, `\u{2}`, `\u{4}`) stripping;
+  rejection of raw ASCII control bytes in CSS styles and attribute URLs (CRIT-01, HIGH-01).
+- `fador-core`: Dangling symlink path traversal check in `is_inside` (HIGH-02);
+  RFC 7693 final-block fix in `blake2b` for exact 128-byte block multiples (HIGH-10);
+  cached `/dev/urandom` descriptor and infallible OS-backed `secure_random_*`
+  primitives (HIGH-09); year bound clamping in `civil_to_epoch` (MED-11); cumulative
+  limit and pre-allocation capping in PHP unserializer (LOW-07).
+- `fador-auth`: All session IDs, CSRF tokens, and salts switched to `secure_random_*`;
+  `FormKey::token` session ID binding for authenticated users (MED-07); isolated guest
+  and authenticated session storage to protect user sessions from eviction floods (MED-09);
+  hardened rate-limiting eviction preserving user attempt records (MED-08); constant-time
+  dummy password verifications on inactive/suspended accounts (MED-10).
+- `fador-mysql`: Dropped `CLIENT_MULTI_RESULTS` to prevent multi-result set lingering;
+  transaction state tracking (`in_transaction`) and automatic rollback on pool drop (HIGH-08);
+  aligned `format_sql` lexer with MySQL rules for `--`, `#`, and `/*! ... */` executable
+  comments (MED-03); auth handshake iteration limit.
+- `fador-http`: Per-request deadlines and keep-alive idle timeouts mitigating Slowloris
+  attacks (HIGH-07); preserved `X-Forwarded-For` arrival order and latest `X-Forwarded-Proto` (MED-01);
+  strict HTTP request line and CRLF validation (MED-02).
+- `fador-smf-theme`: AST and parser depth limits (`MAX_PARSE_DEPTH = 64`, `MAX_EXPR_DEPTH = 64`,
+  `MAX_ARRAY_DEPTH = 64`) preventing call-stack exhaustion (HIGH-05); wrapping arithmetic
+  across evaluators and builtins preventing overflow panics (HIGH-06); bounded string output
+  from `php_sprintf` (HIGH-04); HTML escaping of source in `create_button` (MED-12).
+- `fador-wikitext`: Bounded width in `PADLEFT`/`PADRIGHT` (HIGH-04); saturating arithmetic
+  in `{{#sub:}}` and template transclusion normalization (MED-12).
+- `fador-services`: Chunked transfer decoding in third-party captcha verifier (MED-04);
+  rejection sampling for unbiased captcha friendly codes and collision-free audio WAV tones;
+  SMTP multiline reply code consistency and credentials sanitization; bounded cron lock
+  reading; feed URI scheme validation (`is_safe_feed_link`, INFO-01).
+- `fador-compress` & `fador-thumb`: Lowered default allocation limits and enforced target
+  dimension limits in thumbnail rendering (MED-05); dynamic Huffman Kraft's inequality validation.
+- `fador-i18n`: Validated language pack codes against directory traversal (HIGH-03);
+  saturating calendar calculations.
+- `fador-phpbb-template`: HTML-escaped NUL byte replacement and `js_escape` for `LA_`
+  template variables.
+- `fador-testutil`: Added `#![deny(unsafe_code)]` attribute.
+
+### Changed
+
+- All crates updated to `0.2.0`.
+
 ## 0.1.1 - 2026-11-02
 
 ### Added

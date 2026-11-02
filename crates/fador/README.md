@@ -4,14 +4,14 @@ Facade and prelude for the fador Rust helpers.
 
 ```toml
 [dependencies]
-fador = "0.1"
+fador = "0.2"
 ```
 
 Enable only what you need:
 
 ```toml
 [dependencies]
-fador = { version = "0.1", default-features = false, features = ["http", "mysql"] }
+fador = { version = "0.2", default-features = false, features = ["http", "mysql"] }
 ```
 
 | Feature | Re-exported crate |

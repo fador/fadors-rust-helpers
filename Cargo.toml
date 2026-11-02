@@ -3,7 +3,7 @@ members = ["crates/*"]
 resolver = "2"
 
 [workspace.package]
-version = "0.1.1"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.88"
 license = "MIT"
@@ -11,17 +11,17 @@ repository = "https://github.com/fador/fadors-rust-helpers"
 authors = ["Marko Viitanen <fador@iki.fi>"]
 
 [workspace.dependencies]
-fador = { path = "crates/fador", version = "0.1.1" }
-fador-auth = { path = "crates/fador-auth", version = "0.1.1" }
-fador-compress = { path = "crates/fador-compress", version = "0.1.1" }
-fador-core = { path = "crates/fador-core", version = "0.1.1" }
-fador-http = { path = "crates/fador-http", version = "0.1.1" }
-fador-i18n = { path = "crates/fador-i18n", version = "0.1.1" }
-fador-markup = { path = "crates/fador-markup", version = "0.1.1" }
-fador-mysql = { path = "crates/fador-mysql", version = "0.1.1" }
-fador-phpbb-template = { path = "crates/fador-phpbb-template", version = "0.1.1" }
-fador-services = { path = "crates/fador-services", version = "0.1.1" }
-fador-smf-theme = { path = "crates/fador-smf-theme", version = "0.1.1" }
-fador-testutil = { path = "crates/fador-testutil", version = "0.1.1" }
-fador-thumb = { path = "crates/fador-thumb", version = "0.1.1" }
-fador-wikitext = { path = "crates/fador-wikitext", version = "0.1.1" }
+fador = { path = "crates/fador", version = "0.2.0" }
+fador-auth = { path = "crates/fador-auth", version = "0.2.0" }
+fador-compress = { path = "crates/fador-compress", version = "0.2.0" }
+fador-core = { path = "crates/fador-core", version = "0.2.0" }
+fador-http = { path = "crates/fador-http", version = "0.2.0" }
+fador-i18n = { path = "crates/fador-i18n", version = "0.2.0" }
+fador-markup = { path = "crates/fador-markup", version = "0.2.0" }
+fador-mysql = { path = "crates/fador-mysql", version = "0.2.0" }
+fador-phpbb-template = { path = "crates/fador-phpbb-template", version = "0.2.0" }
+fador-services = { path = "crates/fador-services", version = "0.2.0" }
+fador-smf-theme = { path = "crates/fador-smf-theme", version = "0.2.0" }
+fador-testutil = { path = "crates/fador-testutil", version = "0.2.0" }
+fador-thumb = { path = "crates/fador-thumb", version = "0.2.0" }
+fador-wikitext = { path = "crates/fador-wikitext", version = "0.2.0" }
