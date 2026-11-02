@@ -148,13 +148,14 @@ impl FixedWindowLimiter {
         let hash = self.hasher.hash_one(key);
         let shard = &self.shards[(hash as usize) % SHARDS];
         let mut map = shard.lock();
-        let window_start = now.div_euclid(self.window) * self.window;
+        let elapsed = now.rem_euclid(self.window);
+        let window_start = now.saturating_sub(elapsed);
         if !map.contains_key(&hash) && map.len() >= shard.capacity {
             map.retain(|_, bucket| bucket.window_start == window_start);
             while map.len() >= shard.capacity {
                 let Some(oldest) = map
                     .iter()
-                    .min_by_key(|(_, bucket)| bucket.window_start)
+                    .min_by_key(|(_, bucket)| (bucket.window_start, bucket.count))
                     .map(|(key, _)| *key)
                 else {
                     break;
@@ -172,7 +173,7 @@ impl FixedWindowLimiter {
         }
         if bucket.count >= self.limit {
             return ThrottleDecision::Limited {
-                retry_after: (window_start + self.window - now).max(1),
+                retry_after: (self.window - elapsed).max(1),
             };
         }
         bucket.count += 1;
@@ -191,11 +192,12 @@ impl FixedWindowLimiter {
         let hash = self.hasher.hash_one(key);
         let shard = &self.shards[(hash as usize) % SHARDS];
         let map = shard.lock();
-        let window_start = now.div_euclid(self.window) * self.window;
+        let elapsed = now.rem_euclid(self.window);
+        let window_start = now.saturating_sub(elapsed);
         match map.get(&hash) {
             Some(bucket) if bucket.window_start == window_start && bucket.count >= self.limit => {
                 ThrottleDecision::Limited {
-                    retry_after: (window_start + self.window - now).max(1),
+                    retry_after: (self.window - elapsed).max(1),
                 }
             }
             Some(bucket) if bucket.window_start == window_start => ThrottleDecision::Allowed {
@@ -305,6 +307,9 @@ impl FloodCounter {
         };
         if tries > 0 {
             if timestamp < now.saturating_sub(self.window) {
+                if was_correct {
+                    return Ok(String::new());
+                }
                 tries = 2;
             }
             if timestamp < now.saturating_sub(self.reset_after) {
@@ -484,7 +489,12 @@ impl LoginAttemptStore for MemoryLoginAttemptStore {
     fn record(&self, attempt: &LoginAttempt<'_>) -> StoreResult<()> {
         let mut rows = self.lock();
         if rows.len() >= self.capacity {
-            rows.remove(0);
+            let cutoff = attempt.now.saturating_sub(86_400);
+            rows.retain(|row| row.at >= cutoff);
+            if rows.len() >= self.capacity {
+                let index = rows.iter().position(|row| row.user_id.is_none()).unwrap_or(0);
+                rows.remove(index);
+            }
         }
         rows.push(LoginAttemptRecord {
             user_id: attempt.user_id,
@@ -553,6 +563,10 @@ mod tests {
             limiter.check("key", 60),
             ThrottleDecision::Allowed { remaining: 2 }
         );
+        for extreme in [i64::MIN, i64::MAX] {
+            let _ = limiter.check("extreme", extreme);
+            let _ = limiter.peek("extreme", extreme);
+        }
     }
 
     #[test]
@@ -626,6 +640,7 @@ mod tests {
             flood.validate("1000|5", 1_001, true),
             Err(FloodError::BruteForce)
         );
+        assert_eq!(flood.validate("1000|5", 1_030, true).unwrap(), "");
         assert_eq!(
             flood.validate("1000|6", 1_001, false),
             Err(FloodError::BruteForce)
@@ -761,7 +776,16 @@ mod tests {
             store.record(&attempt).unwrap();
         }
         assert_eq!(store.len(), 3);
-        let rows = store.lock();
-        assert_eq!(rows[0].username.chars().count(), MAX_ATTEMPT_USERNAME);
+        {
+            let rows = store.lock();
+            assert_eq!(rows[0].username.chars().count(), MAX_ATTEMPT_USERNAME);
+        }
+
+        // Prefers evicting unknown-user attempts over known-user attempts.
+        let store = MemoryLoginAttemptStore::new(2);
+        store.record(&attempt(Some(7), "192.0.2.1", 1_000, false)).unwrap();
+        store.record(&attempt(None, "192.0.2.2", 1_001, false)).unwrap();
+        store.record(&attempt(None, "192.0.2.3", 1_002, false)).unwrap();
+        assert_eq!(store.user_failures(7, 0).unwrap(), 1);
     }
 }

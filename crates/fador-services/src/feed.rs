@@ -428,6 +428,22 @@ pub fn rfc3339_date(unix: i64) -> String {
     )
 }
 
+/// Validate that a feed URI has an acceptable scheme (`http`, `https`, or relative).
+pub fn is_safe_feed_link(link: &str) -> bool {
+    let trimmed = link.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    if trimmed.chars().any(|c| c.is_control() || c.is_whitespace()) {
+        return false;
+    }
+    if let Some((scheme, _)) = trimmed.split_once(':') {
+        let scheme = scheme.trim();
+        return scheme.eq_ignore_ascii_case("http") || scheme.eq_ignore_ascii_case("https");
+    }
+    true
+}
+
 fn render_rss(out: &mut String, format: Format, feed: &Feed) {
     let version = if format == Format::Rss2 {
         "2.0"
@@ -440,7 +456,9 @@ fn render_rss(out: &mut String, format: Format, feed: &Feed) {
     ));
     out.push_str("<channel>\n");
     push_text(out, I1, "title", &feed.title);
-    push_text(out, I1, "link", &feed.link);
+    if is_safe_feed_link(&feed.link) {
+        push_text(out, I1, "link", &feed.link);
+    }
     push_cdata(out, I1, "description", &feed.description);
     push_text(out, I1, "language", feed_language(feed));
     if feed.updated > 0 {
@@ -459,7 +477,9 @@ fn render_rss_item(out: &mut String, entry: &Entry, feed: &Feed, with_guid: bool
     out.push_str(I1);
     out.push_str("<item>\n");
     push_text(out, I2, "title", &entry.title);
-    push_text(out, I2, "link", &entry.link);
+    if is_safe_feed_link(&entry.link) {
+        push_text(out, I2, "link", &entry.link);
+    }
     if with_guid {
         out.push_str(&format!(
             "{I2}<guid isPermaLink=\"true\">{}</guid>\n",
@@ -501,13 +521,13 @@ fn render_atom(out: &mut String, feed: &Feed) {
     if !feed.description.is_empty() {
         push_text(out, I1, "subtitle", &feed.description);
     }
-    if !feed.self_link.is_empty() {
+    if is_safe_feed_link(&feed.self_link) {
         out.push_str(&format!(
             "{I1}<link rel=\"self\" type=\"application/atom+xml\" href=\"{}\" />\n",
             xml_escape_attr(&feed.self_link)
         ));
     }
-    if !feed.link.is_empty() {
+    if is_safe_feed_link(&feed.link) {
         out.push_str(&format!(
             "{I1}<link rel=\"alternate\" type=\"text/html\" href=\"{}\" />\n",
             xml_escape_attr(&feed.link)
@@ -535,7 +555,7 @@ fn render_atom_entry(out: &mut String, entry: &Entry, feed: &Feed) {
     out.push_str("<entry>\n");
     push_text(out, I2, "id", entry_id(entry, feed));
     push_text(out, I2, "title", &entry.title);
-    if !entry.link.is_empty() {
+    if is_safe_feed_link(&entry.link) {
         out.push_str(&format!(
             "{I2}<link rel=\"alternate\" type=\"text/html\" href=\"{}\" />\n",
             xml_escape_attr(&entry.link)
@@ -558,7 +578,7 @@ fn render_atom_entry(out: &mut String, entry: &Entry, feed: &Feed) {
         if !entry.author_email.is_empty() {
             push_text(out, I3, "email", &entry.author_email);
         }
-        if !entry.author_link.is_empty() {
+        if is_safe_feed_link(&entry.author_link) {
             push_text(out, I3, "uri", &entry.author_link);
         }
         out.push_str(I2);
@@ -594,7 +614,9 @@ fn render_rdf(out: &mut String, feed: &Feed) {
         xml_escape_attr(feed_id(feed))
     ));
     push_text(out, I2, "title", &feed.title);
-    push_text(out, I2, "link", &feed.link);
+    if is_safe_feed_link(&feed.link) {
+        push_text(out, I2, "link", &feed.link);
+    }
     push_cdata(out, I2, "description", &feed.description);
     push_text(out, I2, "dc:language", feed_language(feed));
     push_text(out, I2, "dc:date", &rfc3339_date(feed.updated));
@@ -626,7 +648,9 @@ fn render_rdf_item(out: &mut String, entry: &Entry, feed: &Feed) {
         xml_escape_attr(entry_id(entry, feed))
     ));
     push_text(out, I2, "title", &entry.title);
-    push_text(out, I2, "link", &entry.link);
+    if is_safe_feed_link(&entry.link) {
+        push_text(out, I2, "link", &entry.link);
+    }
     let description = if entry.content.is_empty() {
         &entry.summary
     } else {
@@ -695,10 +719,12 @@ fn truncate(value: &str) -> &str {
 fn feed_id(feed: &Feed) -> &str {
     if !feed.id.is_empty() {
         &feed.id
-    } else if !feed.self_link.is_empty() {
+    } else if is_safe_feed_link(&feed.self_link) {
         &feed.self_link
-    } else {
+    } else if is_safe_feed_link(&feed.link) {
         &feed.link
+    } else {
+        ""
     }
 }
 
@@ -713,7 +739,7 @@ fn feed_language(feed: &Feed) -> &str {
 fn entry_id<'a>(entry: &'a Entry, feed: &'a Feed) -> &'a str {
     if !entry.id.is_empty() {
         &entry.id
-    } else if !entry.link.is_empty() {
+    } else if is_safe_feed_link(&entry.link) {
         &entry.link
     } else {
         feed_id(feed)
@@ -1007,6 +1033,29 @@ mod tests {
                 assert!(xml.starts_with("<?xml"));
                 assert!(!xml.contains('\u{0}'));
             }
+        }
+    }
+
+    #[test]
+    fn feed_rejects_unsafe_uri_schemes() {
+        assert!(is_safe_feed_link("https://example.test/path"));
+        assert!(is_safe_feed_link("http://example.test/"));
+        assert!(is_safe_feed_link("/relative/path"));
+        assert!(is_safe_feed_link("feed.php"));
+        assert!(!is_safe_feed_link("javascript:alert(1)"));
+        assert!(!is_safe_feed_link("data:text/html,<script>"));
+        assert!(!is_safe_feed_link("vbscript:msgbox(1)"));
+
+        let unsafe_feed = Feed::new("Unsafe", "javascript:alert(1)")
+            .self_link("data:text/html,pwn")
+            .entry(
+                Entry::new("Item", "javascript:alert(2)")
+                    .author_link("data:application/javascript,bad"),
+            );
+        for format in [Format::Rss, Format::Rss2, Format::Atom, Format::Rdf] {
+            let xml = render(format, &unsafe_feed);
+            assert!(!xml.contains("javascript:"));
+            assert!(!xml.contains("data:"));
         }
     }
 }

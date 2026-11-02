@@ -18,7 +18,7 @@ use crate::checksum::{adler32, crc32};
 /// The limit is deliberately generous because the same decoder is used for
 /// database backups. Callers that decompress untrusted input should pass a
 /// smaller value to [`inflate_with_limit`].
-pub const DEFAULT_MAX_OUTPUT: usize = 512 * 1024 * 1024;
+pub const DEFAULT_MAX_OUTPUT: usize = 64 * 1024 * 1024;
 
 /// A decoding failure.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -100,7 +100,10 @@ pub fn inflate_raw(data: &[u8]) -> Result<Vec<u8>, Error> {
 
 /// Decompress a raw DEFLATE stream with an explicit output limit.
 pub fn inflate_raw_with_limit(data: &[u8], max_output: usize) -> Result<Vec<u8>, Error> {
-    let (out, _) = inflate_into(data, max_output)?;
+    let (out, consumed) = inflate_into(data, max_output)?;
+    if consumed != data.len() {
+        return Err(Error::TrailingData);
+    }
     Ok(out)
 }
 
@@ -369,6 +372,13 @@ impl Huffman {
             counts[length as usize] += 1;
         }
         counts[0] = 0;
+        let mut left = 1i32;
+        for &count in &counts[1..16] {
+            left = (left << 1) - i32::from(count);
+            if left < 0 {
+                return Err(Error::InvalidCode("Huffman tree"));
+            }
+        }
         let mut offsets = [0u16; 16];
         for index in 1..16 {
             offsets[index] = offsets[index - 1] + counts[index - 1];
@@ -687,6 +697,18 @@ mod tests {
         let mut zlib = ZLIB_HELLO.to_vec();
         zlib.push(0);
         assert_eq!(zlib_decompress(&zlib), Err(Error::TrailingData));
+
+        let mut raw = RAW_HELLO.to_vec();
+        raw.push(0);
+        assert_eq!(inflate_raw(&raw), Err(Error::TrailingData));
+    }
+
+    #[test]
+    fn rejects_oversubscribed_huffman_trees() {
+        assert!(matches!(
+            Huffman::from_lengths(&[1, 1, 1]),
+            Err(Error::InvalidCode("Huffman tree"))
+        ));
     }
 
     #[test]

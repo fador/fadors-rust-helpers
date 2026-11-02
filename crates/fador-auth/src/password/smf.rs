@@ -69,6 +69,14 @@ pub fn verify_password(stored_hash: &str, member_name: &str, password: &str) -> 
     if stored_hash.len() == MD5_HASH_LEN {
         candidates.push(hex(&md5(format!("{md5_hex}{name}").as_bytes())));
     }
+    // SMF in UTF-8 mode lowercases with `$smcFunc['strtolower']`, which also
+    // folds non-ASCII letters (`Ä` -> `ä`).
+    if !member_name.is_ascii() {
+        let unicode_name = member_name.to_lowercase();
+        if unicode_name != name {
+            candidates.push(sha1_hex(&format!("{unicode_name}{password}")));
+        }
+    }
     candidates
         .iter()
         .any(|candidate| constant_time_eq(candidate.as_bytes(), stored_hash.as_bytes()))

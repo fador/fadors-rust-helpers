@@ -13,7 +13,10 @@
 
 use crate::error::StoreError;
 use crate::password::smf::{verify_cookie_password, COOKIE_HASH_LEN};
-use fador_core::php::{serialize, unserialize, PhpKey, PhpValue};
+use fador_core::php::{serialize, unserialize_with_budget, PhpKey, PhpValue};
+
+/// The largest serialised cookie value [`SmfLoginCookie::parse`] accepts.
+const MAX_COOKIE_BYTES: usize = 512;
 
 /// A parsed SMF login cookie.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -82,15 +85,30 @@ impl SmfLoginCookie {
     /// and an expired member cookie. A guest cookie (`user_id == 0`) is never
     /// expired.
     pub fn parse(value: &str, now: i64) -> Option<Self> {
-        let value = unserialize(value).ok()?;
+        // A real cookie is under 100 bytes; never parse more than this.
+        let value = unserialize_with_budget(value, MAX_COOKIE_BYTES).ok()?;
         let PhpValue::Array(items) = value else {
             return None;
         };
         if items.len() < 3 || items.len() > 4 {
             return None;
         }
+        // SMF writes a plain list; reject reordered or string-keyed arrays.
+        if items
+            .iter()
+            .enumerate()
+            .any(|(index, (key, _))| *key != PhpKey::Int(index as i64))
+        {
+            return None;
+        }
         let user_id = items[0].1.as_i64()?;
+        if user_id < 0 {
+            return None;
+        }
         let password = items[1].1.as_str()?;
+        if user_id != 0 && password.is_empty() {
+            return None;
+        }
         if !password.is_empty()
             && (password.len() != COOKIE_HASH_LEN
                 || !password.bytes().all(|byte| byte.is_ascii_hexdigit()))
@@ -180,6 +198,12 @@ mod tests {
             "a:3:{i:0;s:1:\"7\";i:1;s:40:\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";i:2;i:2000;}",
             "a:3:{i:0;i:7;i:1;s:39:\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";i:2;i:2000;}",
             "a:3:{i:0;i:7;i:1;s:40:\"gggggggggggggggggggggggggggggggggggggggg\";i:2;i:2000;}",
+            // Negative member ids, member cookies without a password, and
+            // non-list keys are refused.
+            "a:3:{i:0;i:-7;i:1;s:40:\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";i:2;i:2000;}",
+            "a:3:{i:0;i:7;i:1;s:0:\"\";i:2;i:2000;}",
+            "a:3:{i:1;s:40:\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";i:0;i:7;i:2;i:2000;}",
+            "a:3:{s:1:\"a\";i:7;i:1;s:40:\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";i:2;i:2000;}",
         ] {
             assert!(SmfLoginCookie::parse(value, 1_000).is_none(), "{value}");
         }

@@ -29,7 +29,7 @@ pub(crate) fn render_nodes(
                         if let Some(key) = path.strip_prefix("L_") {
                             value = Value::Str(runtime.lang(key, &[]));
                         } else if let Some(key) = path.strip_prefix("LA_") {
-                            value = Value::Str(addslashes(&runtime.lang(key, &[])));
+                            value = Value::Str(crate::expr::js_escape(&runtime.lang(key, &[])));
                         }
                     }
                 }
@@ -178,12 +178,4 @@ fn strip_spaceless(input: &str) -> String {
         }
     }
     out.trim().to_string()
-}
-
-fn addslashes(input: &str) -> String {
-    input
-        .replace('\\', "\\\\")
-        .replace('\'', "\\'")
-        .replace('"', "\\\"")
-        .replace('\0', "\\0")
 }

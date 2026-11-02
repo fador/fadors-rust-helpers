@@ -20,7 +20,7 @@ use fador_core::crypto::{base64_decode, hex, md5};
 #[cfg(feature = "mediawiki-pbkdf2")]
 use fador_core::crypto::{base64_encode, pbkdf2_hmac_sha256, pbkdf2_hmac_sha512};
 #[cfg(feature = "mediawiki-pbkdf2")]
-use fador_core::random::random_array;
+use fador_core::random::secure_random_array;
 
 /// The smallest PBKDF2 iteration count accepted from a stored row.
 pub const MIN_PBKDF2_ITERATIONS: u32 = 1;
@@ -136,7 +136,7 @@ struct ParsedPbkdf2 {
 
 fn parse_pbkdf2_full(hash: &str) -> Option<ParsedPbkdf2> {
     let rest = hash.strip_prefix(":pbkdf2:")?;
-    let mut parts = rest.splitn(5, ':');
+    let mut parts = rest.split(':');
     let algorithm = match parts.next()? {
         "sha256" => Pbkdf2Algorithm::Sha256,
         "sha512" => Pbkdf2Algorithm::Sha512,
@@ -146,6 +146,9 @@ fn parse_pbkdf2_full(hash: &str) -> Option<ParsedPbkdf2> {
     let length = parts.next()?.parse::<usize>().ok()?;
     let salt = base64_decode(parts.next()?)?;
     let expected = base64_decode(parts.next()?)?;
+    if parts.next().is_some() {
+        return None;
+    }
     if !(MIN_PBKDF2_ITERATIONS..=MAX_PBKDF2_ITERATIONS).contains(&iterations)
         || length == 0
         || length > MAX_PBKDF2_LENGTH
@@ -206,7 +209,7 @@ pub fn needs_rehash(hash: &str, min_iterations: u32) -> bool {
 /// Hash a new password with PBKDF2-HMAC-SHA-256 and a random 16-byte salt.
 #[cfg(feature = "mediawiki-pbkdf2")]
 pub fn hash_pbkdf2(password: &str) -> String {
-    let salt = random_array::<16>();
+    let salt = secure_random_array::<16>();
     let derived = pbkdf2_hmac_sha256(
         password.as_bytes(),
         &salt,

@@ -317,7 +317,7 @@ impl Evaluator {
             "abs" => {
                 let value = args.first().cloned().unwrap_or(Value::Null);
                 Ok(match value {
-                    Value::Int(value) => Value::Int(value.abs()),
+                    Value::Int(value) => Value::Int(value.wrapping_abs()),
                     other => Value::Float(other.to_float().abs()),
                 })
             }
@@ -613,7 +613,8 @@ pub(crate) fn php_sprintf(format: &str, args: &[Value]) -> String {
             .iter()
             .collect::<String>()
             .parse::<usize>()
-            .ok();
+            .ok()
+            .map(|w| w.min(65_535));
         let mut precision = None;
         if chars.get(index) == Some(&'.') {
             index += 1;
@@ -625,7 +626,8 @@ pub(crate) fn php_sprintf(format: &str, args: &[Value]) -> String {
                 .iter()
                 .collect::<String>()
                 .parse::<usize>()
-                .ok();
+                .ok()
+                .map(|p| p.min(65_535));
         }
         let Some(spec) = chars.get(index).copied() else {
             break;

@@ -22,13 +22,15 @@ use std::path::{Component, Path, PathBuf};
 
 /// The device names Windows resolves before looking at the directory entry.
 const RESERVED_DEVICES: &[&str] = &[
-    "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
-    "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+    "CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$", "COM1", "COM2", "COM3", "COM4", "COM5",
+    "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7",
+    "LPT8", "LPT9",
 ];
 
 /// Whether a single name (without an extension) is a reserved device name.
 pub fn is_reserved_device_name(name: &str) -> bool {
     let stem = name.split_once('.').map(|(stem, _)| stem).unwrap_or(name);
+    let stem = stem.trim_end_matches([' ', '.']);
     RESERVED_DEVICES
         .iter()
         .any(|device| stem.eq_ignore_ascii_case(device))
@@ -113,10 +115,23 @@ pub fn is_inside(root: &Path, path: &Path) -> bool {
     };
     match std::fs::canonicalize(path) {
         Ok(path) => path.starts_with(root),
-        Err(_) => path
-            .parent()
-            .and_then(|parent| std::fs::canonicalize(parent).ok())
-            .is_some_and(|parent| parent.starts_with(&root)),
+        Err(_) => {
+            match std::fs::symlink_metadata(path) {
+                Ok(_) => return false,
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => return false,
+                Err(_) => {}
+            }
+            if !path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(component_is_safe)
+            {
+                return false;
+            }
+            path.parent()
+                .and_then(|parent| std::fs::canonicalize(parent).ok())
+                .is_some_and(|parent| parent.starts_with(&root))
+        }
     }
 }
 
@@ -210,6 +225,12 @@ mod tests {
         assert!(!component_is_safe("file "));
         assert!(!component_is_safe("CON"));
         assert!(!component_is_safe("con.txt"));
+        assert!(!component_is_safe("CON .txt"));
+        assert!(!component_is_safe("CON..txt"));
+        assert!(!component_is_safe("CONIN$"));
+        assert!(!component_is_safe("conin$.txt"));
+        assert!(!component_is_safe("CONOUT$"));
+        assert!(!component_is_safe("conout$.log"));
         assert!(!component_is_safe("NUL.csv"));
         assert!(!component_is_safe("COM1"));
         assert!(!component_is_safe("lpt9.log"));
@@ -263,6 +284,12 @@ mod tests {
         assert!(is_inside(&root, &root.join("sub/file.txt")));
         // A missing file is accepted when its parent is inside the root.
         assert!(is_inside(&root, &root.join("sub/new.txt")));
+        assert!(!is_inside(&root, &root.join("sub/CON.txt")));
+        assert!(!is_inside(&root, &root.join("sub/CON .txt")));
+        // Windows resolves `..` lexically (so this is the root itself there);
+        // on Unix the missing directory makes the path unresolvable.
+        #[cfg(unix)]
+        assert!(!is_inside(&root, &root.join("missing_dir/..")));
         assert!(!is_inside(&root, &temp.0.join("new.txt")));
     }
 
@@ -272,8 +299,11 @@ mod tests {
         let temp = Temp::new();
         let root = temp.root();
         std::os::unix::fs::symlink(temp.0.join("outside.txt"), root.join("link.txt")).unwrap();
+        std::os::unix::fs::symlink(temp.0.join("missing_outside.txt"), root.join("dangling.txt"))
+            .unwrap();
         std::os::unix::fs::symlink(&temp.0, root.join("linkdir")).unwrap();
         assert!(!is_inside(&root, &root.join("link.txt")));
+        assert!(!is_inside(&root, &root.join("dangling.txt")));
         assert!(!is_inside(&root, &root.join("linkdir/new.txt")));
         assert!(resolve_under(&root, "link.txt").is_none());
     }

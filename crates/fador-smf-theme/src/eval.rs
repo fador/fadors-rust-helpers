@@ -181,6 +181,11 @@ enum Flow {
 /// [`Evaluator::execute`] (which defines the template's functions) and call a
 /// function with [`Evaluator::call`]. Rendered text accumulates in the
 /// evaluator and is drained with [`Evaluator::take_output`].
+const MAX_EXPR_DEPTH: usize = 64;
+
+/// A template evaluator.
+///
+/// Holds functions, globals, constants, and limits for template execution.
 pub struct Evaluator {
     functions: HashMap<String, Rc<FunctionDef>>,
     globals: HashMap<String, Cell>,
@@ -189,6 +194,7 @@ pub struct Evaluator {
     limits: EvalLimits,
     steps: u64,
     depth: usize,
+    expr_depth: usize,
     output: String,
 }
 
@@ -203,6 +209,7 @@ impl Evaluator {
             limits,
             steps: 0,
             depth: 0,
+            expr_depth: 0,
             output: String::new(),
         }
     }
@@ -548,6 +555,16 @@ impl Evaluator {
 
     fn eval(&mut self, expr: &Expr, scope: &mut Scope) -> Result<Value, EvalError> {
         self.tick()?;
+        if self.expr_depth >= MAX_EXPR_DEPTH {
+            return Err(self.error("expression nesting limit exceeded"));
+        }
+        self.expr_depth += 1;
+        let result = self.eval_inner(expr, scope);
+        self.expr_depth -= 1;
+        result
+    }
+
+    fn eval_inner(&mut self, expr: &Expr, scope: &mut Scope) -> Result<Value, EvalError> {
         match expr {
             Expr::Null => Ok(Value::Null),
             Expr::Bool(value) => Ok(Value::Bool(*value)),
@@ -573,7 +590,7 @@ impl Evaluator {
                             // PHP advances the implicit index past the
                             // largest explicit non-negative integer key.
                             if index >= next {
-                                next = index + 1;
+                                next = index.saturating_add(1);
                             }
                             array.insert(Key::Int(index), value);
                         } else {
@@ -581,7 +598,7 @@ impl Evaluator {
                         }
                     } else {
                         array.insert(Key::Int(next), value);
-                        next += 1;
+                        next = next.saturating_add(1);
                     }
                 }
                 Ok(Value::from_array(array))
@@ -642,7 +659,7 @@ impl Evaluator {
                 Ok(match op {
                     UnOp::Not => Value::Bool(!value.to_bool()),
                     UnOp::Neg => match value {
-                        Value::Int(value) => Value::Int(-value),
+                        Value::Int(value) => Value::Int(value.wrapping_neg()),
                         _ => Value::Float(-value.to_float()),
                     },
                     UnOp::Pos => match value {
@@ -675,7 +692,7 @@ impl Evaluator {
             Expr::PreInc(value) => {
                 let cell = self.resolve_cell(value, scope)?;
                 let next = match &*cell.borrow() {
-                    Value::Int(value) => Value::Int(value + 1),
+                    Value::Int(value) => Value::Int(value.wrapping_add(1)),
                     other => Value::Float(other.to_float() + 1.0),
                 };
                 *cell.borrow_mut() = next.clone();
@@ -684,7 +701,7 @@ impl Evaluator {
             Expr::PreDec(value) => {
                 let cell = self.resolve_cell(value, scope)?;
                 let next = match &*cell.borrow() {
-                    Value::Int(value) => Value::Int(value - 1),
+                    Value::Int(value) => Value::Int(value.wrapping_sub(1)),
                     other => Value::Float(other.to_float() - 1.0),
                 };
                 *cell.borrow_mut() = next.clone();
@@ -694,7 +711,7 @@ impl Evaluator {
                 let cell = self.resolve_cell(value, scope)?;
                 let previous = cell.borrow().deep_clone();
                 *cell.borrow_mut() = match &previous {
-                    Value::Int(value) => Value::Int(value + 1),
+                    Value::Int(value) => Value::Int(value.wrapping_add(1)),
                     other => Value::Float(other.to_float() + 1.0),
                 };
                 Ok(previous)
@@ -703,7 +720,7 @@ impl Evaluator {
                 let cell = self.resolve_cell(value, scope)?;
                 let previous = cell.borrow().deep_clone();
                 *cell.borrow_mut() = match &previous {
-                    Value::Int(value) => Value::Int(value - 1),
+                    Value::Int(value) => Value::Int(value.wrapping_sub(1)),
                     other => Value::Float(other.to_float() - 1.0),
                 };
                 Ok(previous)
@@ -806,20 +823,27 @@ impl Evaluator {
             return self.bounded_string(text, "concatenation");
         }
         Ok(match op {
-            BinOp::Add => numeric_op(left, right, |a, b| a + b, |a, b| a + b),
-            BinOp::Sub => numeric_op(left, right, |a, b| a - b, |a, b| a - b),
-            BinOp::Mul => numeric_op(left, right, |a, b| a * b, |a, b| a * b),
+            BinOp::Add => numeric_op(left, right, |a, b| a.wrapping_add(b), |a, b| a + b),
+            BinOp::Sub => numeric_op(left, right, |a, b| a.wrapping_sub(b), |a, b| a - b),
+            BinOp::Mul => numeric_op(left, right, |a, b| a.wrapping_mul(b), |a, b| a * b),
             BinOp::Div => match (&left, &right) {
                 (Value::Int(a), Value::Int(b)) if *b != 0 => {
-                    if a % b == 0 {
-                        Value::Int(a / b)
+                    if a.checked_rem(*b) == Some(0) {
+                        Value::Int(a.wrapping_div(*b))
                     } else {
                         Value::Float(*a as f64 / *b as f64)
                     }
                 }
                 _ => Value::Float(left.to_float() / right.to_float()),
             },
-            BinOp::Mod => Value::Int(left.to_int() % right.to_int().max(1)),
+            BinOp::Mod => {
+                let r = right.to_int();
+                if r == 0 || r == -1 {
+                    Value::Int(0)
+                } else {
+                    Value::Int(left.to_int().wrapping_rem(r))
+                }
+            }
             BinOp::Concat => unreachable!(),
             BinOp::BitAnd => Value::Int(left.to_int() & right.to_int()),
             BinOp::BitOr => Value::Int(left.to_int() | right.to_int()),
@@ -970,7 +994,11 @@ impl Evaluator {
             .map(|cell| cell.borrow().deep_clone())
             .collect::<Vec<_>>();
         if let Some(result) = self.call_builtin(&lower, &values) {
-            return result;
+            let value = result?;
+            if let Value::Str(ref s) = value {
+                self.check_string(s)?;
+            }
+            return Ok(value);
         }
         self.call_host(&lower, values)
     }
@@ -1156,6 +1184,9 @@ impl Evaluator {
                     Value::Array(array) => Rc::clone(array),
                     _ => return Err(self.error("cannot append to this value")),
                 };
+                if array.borrow().len() >= self.limits.max_array_entries {
+                    return Err(self.error("array exceeds the entry limit"));
+                }
                 let key = array.borrow_mut().push(Value::Null);
                 array.borrow_mut().set_cell(key, source);
                 Ok(())
@@ -1286,6 +1317,7 @@ impl Evaluator {
                     let inner: String = chars[index + 1..end].iter().collect();
                     let value = self.eval_inline_expression(&inner, scope)?;
                     out.push_str(&value.to_php_string());
+                    self.check_string(&out)?;
                     index = end + 1;
                     continue;
                 }
@@ -1331,6 +1363,7 @@ impl Evaluator {
                         end = close + 1;
                     }
                     out.push_str(&value.to_php_string());
+                    self.check_string(&out)?;
                     index = end;
                     continue;
                 }
@@ -1847,6 +1880,30 @@ function template_main() { echo 'main-', call_other(); }
             let result = evaluator.execute(&statements);
             assert!(result.is_err(), "finished: {code}");
         }
+    }
+
+    #[test]
+    fn integer_overflow_and_cycles_never_panic() {
+        let code = "<?php
+            $a = (1 << 63) / -1;
+            $b = (1 << 63) % -1;
+            $c = -(1 << 63);
+            $d = abs(1 << 63);
+            $arr = array();
+            $arr[] = &$arr;
+            $copy = $arr;
+            $same = ($arr == $arr);
+            $strict = ($arr === $arr);
+        ?>";
+        let statements = parse(code).unwrap();
+        let mut evaluator = Evaluator::new(EvalLimits::default());
+        evaluator.execute(&statements).unwrap();
+    }
+
+    #[test]
+    fn deep_parse_nesting_is_rejected() {
+        let code = format!("<?php echo {}1{}; ?>", "(".repeat(100), ")".repeat(100));
+        assert!(parse(&code).is_err());
     }
 
     #[test]

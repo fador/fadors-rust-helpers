@@ -21,7 +21,7 @@ pub(crate) fn days_in_month(year: i32, month: u32) -> u32 {
 /// Day of the year, 1-366.
 pub(crate) fn day_of_year(year: i32, month: u32, day: u32) -> u32 {
     let mut total = day;
-    for current in 1..month {
+    for current in 1..month.min(13) {
         total += days_in_month(year, current);
     }
     total
@@ -34,10 +34,10 @@ pub(crate) fn iso_week(year: i32, month: u32, day: u32) -> (i32, u32) {
     let mut week = (ordinal - weekday + 10) / 7;
     let mut week_year = year;
     if week < 1 {
-        week_year -= 1;
+        week_year = week_year.saturating_sub(1);
         week = iso_weeks_in_year(week_year);
     } else if week > iso_weeks_in_year(week_year) {
-        week_year += 1;
+        week_year = week_year.saturating_add(1);
         week = 1;
     }
     (week_year, week as u32)
@@ -119,5 +119,8 @@ mod tests {
         assert_eq!(month_day_from_ordinal(2024, 59, true), Some((2, 29)));
         assert_eq!(month_day_from_ordinal(2023, 365, true), None);
         assert_eq!(month_day_from_ordinal(2023, 364, true), Some((12, 31)));
+        assert_eq!(day_of_year(2024, u32::MAX, 1), 367);
+        let _ = iso_week(i32::MIN, 1, 1);
+        let _ = iso_week(i32::MAX, 12, 31);
     }
 }

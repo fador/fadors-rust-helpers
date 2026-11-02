@@ -654,6 +654,39 @@ fn raw_html_is_filtered() {
     let html = render("<a href=\"javascript:alert(1)\">x</a>");
     assert!(!html.contains("href=\"javascript:"), "{html}");
     assert!(html.contains("<a>x</a>"), "{html}");
+
+    let html = render("<div data-x\"onclick=\"alert(1)\">x</div>");
+    // The malformed tag must never be emitted as a live element.
+    assert!(!html.contains("<div data-x"), "{html}");
+    assert!(!html.contains("<div onclick"), "{html}");
+
+    let html = render("<div style=\"background:<nowiki>url(javascript:alert(1))</nowiki>\">x</div>");
+    assert!(!html.to_ascii_lowercase().contains("url("), "{html}");
+    assert!(!html.to_ascii_lowercase().contains("javascript:"), "{html}");
+
+    let html = render("<a href=\"<nowiki>javascript:alert(1)</nowiki>\">x</a>");
+    assert!(!html.to_ascii_lowercase().contains("href=\"javascript:"), "{html}");
+
+    let html = render("<div title=\"__TOC__\">x</div>\n== One ==\nA\n== Two ==\nB\n== Three ==\nC\n== Four ==\nD\n");
+    assert!(!html.contains("title=\"<div"), "{html}");
+}
+
+#[test]
+fn padleft_and_sub_and_template_comments_are_hardened() {
+    let html = render("{{PADLEFT:x|999999999|0}}");
+    assert!(html.len() < 1000, "{html}");
+
+    let html = render("{{#sub:abcdef|5|18446744073709551615}}");
+    assert!(html.contains("f"), "{html}");
+
+    // Internal marker bytes in a stored template are neutralised like the
+    // page source is.
+    let resolver = MemoryResolver::new().with_page(10, "Commented", "A<!-- secret -->B\r\nC\u{2}0\u{2}");
+    let html = render_with(&resolver, &config(), "{{Commented}}");
+    assert!(!html.contains("secret"), "{html}");
+    assert!(!html.contains('\u{2}'), "{html}");
+    assert!(!html.contains('\r'), "{html}");
+    assert!(html.contains("AB"), "{html}");
 }
 
 #[test]

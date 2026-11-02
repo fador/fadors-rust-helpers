@@ -111,6 +111,8 @@ pub struct PhpArray {
 /// Arrays below this size are faster to scan than to index.
 const INDEX_THRESHOLD: usize = 16;
 
+const MAX_ARRAY_DEPTH: usize = 64;
+
 impl PhpArray {
     /// An empty array.
     pub fn new() -> Self {
@@ -203,7 +205,7 @@ impl PhpArray {
             .entries
             .iter()
             .filter_map(|(key, _)| match key {
-                Key::Int(value) => Some(*value + 1),
+                Key::Int(value) => Some(value.saturating_add(1)),
                 Key::Str(_) => None,
             })
             .max()
@@ -264,11 +266,18 @@ impl PhpArray {
 
     /// A recursive copy: mutating the copy never changes this array.
     pub fn deep_clone(&self) -> Self {
+        self.deep_clone_bounded(0)
+    }
+
+    fn deep_clone_bounded(&self, depth: usize) -> Self {
         let mut out = PhpArray::new();
+        if depth > MAX_ARRAY_DEPTH {
+            return out;
+        }
         for (key, value) in &self.entries {
             out.entries.push((
                 key.clone(),
-                Rc::new(RefCell::new(value.borrow().deep_clone())),
+                Rc::new(RefCell::new(value.borrow().deep_clone_bounded(depth + 1))),
             ));
         }
         out
@@ -330,13 +339,22 @@ impl Value {
     /// Scalars and callables are copied as they are; an array is copied
     /// recursively, so the copy can be mutated without affecting the original.
     pub fn deep_clone(&self) -> Value {
+        self.deep_clone_bounded(0)
+    }
+
+    pub(crate) fn deep_clone_bounded(&self, depth: usize) -> Value {
+        if depth > MAX_ARRAY_DEPTH {
+            return Value::Null;
+        }
         match self {
             Value::Null => Value::Null,
             Value::Bool(value) => Value::Bool(*value),
             Value::Int(value) => Value::Int(*value),
             Value::Float(value) => Value::Float(*value),
             Value::Str(value) => Value::Str(value.clone()),
-            Value::Array(array) => Value::from_array(array.borrow().deep_clone()),
+            Value::Array(array) => {
+                Value::from_array(array.borrow().deep_clone_bounded(depth + 1))
+            }
             Value::Function(function) => Value::Function(function.clone()),
         }
     }
@@ -429,6 +447,13 @@ impl Value {
 
     /// Strict comparison (`===`): same type and same value.
     pub fn strict_eq(&self, other: &Value) -> bool {
+        self.strict_eq_bounded(other, 0)
+    }
+
+    fn strict_eq_bounded(&self, other: &Value, depth: usize) -> bool {
+        if depth > MAX_ARRAY_DEPTH {
+            return false;
+        }
         match (self, other) {
             (Value::Null, Value::Null) => true,
             (Value::Bool(a), Value::Bool(b)) => a == b,
@@ -437,6 +462,9 @@ impl Value {
             (Value::Str(a), Value::Str(b)) => a == b,
             (Value::Function(a), Value::Function(b)) => a.is_same(b),
             (Value::Array(a), Value::Array(b)) => {
+                if Rc::ptr_eq(a, b) {
+                    return true;
+                }
                 let a = a.borrow();
                 let b = b.borrow();
                 if a.len() != b.len() {
@@ -446,7 +474,10 @@ impl Value {
                     let Some(other) = b.get(key) else {
                         return false;
                     };
-                    if !value.borrow().strict_eq(&other.borrow()) {
+                    if !value
+                        .borrow()
+                        .strict_eq_bounded(&other.borrow(), depth + 1)
+                    {
                         return false;
                     }
                 }

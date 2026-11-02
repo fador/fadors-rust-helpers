@@ -487,6 +487,7 @@ mod tests {
             match key {
                 "COLON" => ":".into(),
                 "HELLO" => "Hei".into(),
+                "DANGER" => "'<script>'".into(),
                 other => other.into(),
             }
         }
@@ -736,6 +737,12 @@ mod tests {
             render_escaped("{{ VALUE|e }}"),
             "&lt;b&gt;&quot;x&quot; &amp; &#039;y&#039;&lt;/b&gt;"
         );
+        let mut context = Context::new();
+        context.set("text", Value::Str("a\0b".into()));
+        let output = engine()
+            .render_source("escape.html", "{{ text|e }}", &mut context, &TestRuntime)
+            .unwrap();
+        assert_eq!(output.html, "a\u{fffd}b");
         assert_eq!(
             render_escaped("{{ VALUE|e('html') }}"),
             "&lt;b&gt;&quot;x&quot; &amp; &#039;y&#039;&lt;/b&gt;"
@@ -762,6 +769,8 @@ mod tests {
         );
         // The legacy `LA_` form always applies the JavaScript strategy.
         assert_eq!(render_escaped("{LA_HELLO}"), "Hei");
+        assert_eq!(render_escaped("{LA_DANGER}"), "\\'\\u003Cscript\\u003E\\'");
+        assert_eq!(render_escaped("{{ LA_DANGER }}"), "\\'\\u003Cscript\\u003E\\'");
     }
 
     #[test]

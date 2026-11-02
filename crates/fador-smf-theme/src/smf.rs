@@ -150,8 +150,9 @@ impl HostFunctions for SmfFunctions {
                 } else {
                     format!("<strong>{}</strong>", text(&label))
                 };
+                let source_escaped = fador_core::util::html_escape_compat(&source);
                 Ok(Value::Str(format!(
-                    "<img src=\"{source}\" alt=\"{}\" {custom} />{label_html}",
+                    "<img src=\"{source_escaped}\" alt=\"{}\" {custom} />{label_html}",
                     fador_core::util::html_escape_compat(&text(&alt))
                 )))
             }

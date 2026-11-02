@@ -131,15 +131,24 @@ pub fn is_url_attribute(name: &str) -> bool {
 /// assert!(!is_allowed_attr("onerror"));
 /// ```
 pub fn is_allowed_attr(name: &str) -> bool {
-    ALLOWED_ATTRIBUTES
+    if ALLOWED_ATTRIBUTES
         .iter()
         .any(|attribute| name.eq_ignore_ascii_case(attribute))
-        || name
-            .get(..5)
-            .is_some_and(|prefix| prefix.eq_ignore_ascii_case("data-"))
-        || name
-            .get(..5)
-            .is_some_and(|prefix| prefix.eq_ignore_ascii_case("aria-"))
+    {
+        return true;
+    }
+    if let Some(rest) = name.get(5..) {
+        let prefix = &name[..5];
+        if (prefix.eq_ignore_ascii_case("data-") || prefix.eq_ignore_ascii_case("aria-"))
+            && !rest.is_empty()
+            && rest
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b':' | b'.'))
+        {
+            return true;
+        }
+    }
+    false
 }
 
 /// Return `style` when it is a plain declaration list, otherwise an empty
@@ -163,10 +172,9 @@ pub fn sanitize_style(style: &str) -> String {
         return String::new();
     }
     if style.bytes().any(|byte| {
-        matches!(
-            byte,
-            b'\\' | b'(' | b')' | b'{' | b'}' | b'@' | b'<' | b'>' | 0 | b'\r' | b'\n'
-        )
+        byte < 0x20
+            || byte == 0x7f
+            || matches!(byte, b'\\' | b'(' | b')' | b'{' | b'}' | b'@' | b'<' | b'>')
     }) {
         return String::new();
     }
@@ -221,7 +229,20 @@ mod tests {
         ] {
             assert!(is_allowed_attr(name), "{name}");
         }
-        for name in ["onclick", "onerror", "style2", "data", "xmlns", ""] {
+        for name in [
+            "onclick",
+            "onerror",
+            "style2",
+            "data",
+            "data-",
+            "aria-",
+            "data-x\"onclick",
+            "data-x'onclick",
+            "data-x/onclick",
+            "data-x<y",
+            "xmlns",
+            "",
+        ] {
             assert!(!is_allowed_attr(name), "{name}");
         }
     }
@@ -239,6 +260,8 @@ mod tests {
             "-moz-binding: url(x.xml)",
             "color: red\\; background: blue",
             "color: red\n} body {",
+            "color: red\x02",
+            "color: red\x7f",
             "x: javascript:alert(1)",
             "@import 'x.css'",
         ] {

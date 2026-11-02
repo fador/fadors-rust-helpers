@@ -194,6 +194,9 @@ impl LanguagePack {
     /// [`PackError::Io`].
     pub fn load(code: &str, directory: &Path) -> Result<Self, PackError> {
         let code = normalize_language_code(code);
+        if !is_valid_language_code(&code) {
+            return Err(PackError::UnknownLanguage(code));
+        }
         let path = directory.join(format!("{code}.json"));
         if !path.is_file() {
             return Err(PackError::UnknownLanguage(code));
@@ -215,6 +218,9 @@ impl LanguagePack {
         embedded: &EmbeddedPacks,
     ) -> Result<Self, PackError> {
         let code = normalize_language_code(code);
+        if !is_valid_language_code(&code) {
+            return Err(PackError::UnknownLanguage(code));
+        }
         let path = directory.join(format!("{code}.json"));
         if path.is_file() {
             let text = fs::read_to_string(&path).map_err(|error| PackError::Io {
@@ -685,6 +691,16 @@ pub fn normalize_language_code(code: &str) -> String {
         "en_us" | "en_gb" | "en-us" | "en-gb" => "en".to_string(),
         _ => code,
     }
+}
+
+/// Whether `code` is a syntactically valid language code.
+#[must_use]
+pub fn is_valid_language_code(code: &str) -> bool {
+    !code.is_empty()
+        && code.len() <= 32
+        && code
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-'))
 }
 
 impl DateTimeNames {
@@ -1284,6 +1300,17 @@ mod tests {
             LanguageSet::load("fi", &directory.join("missing")),
             Err(PackError::UnknownLanguage(_))
         ));
+        for traversal in ["../etc/passwd", "..\\secret", "fi/../../x", "", "a/b"] {
+            assert!(!is_valid_language_code(traversal), "{traversal}");
+            assert!(matches!(
+                LanguagePack::load(traversal, &directory),
+                Err(PackError::UnknownLanguage(_))
+            ));
+            assert!(matches!(
+                LanguagePack::load_with_embedded(traversal, &directory, &embedded),
+                Err(PackError::UnknownLanguage(_))
+            ));
+        }
 
         std::fs::remove_dir_all(&directory).expect("remove pack directory");
     }

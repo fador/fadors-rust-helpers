@@ -638,16 +638,14 @@ fn civil_to_epoch(
     minute: u32,
     second: u32,
 ) -> Option<u64> {
-    if !(1..=12).contains(&month) || day == 0 || day > days_in_month(year, month) {
+    if !(1970..=9999).contains(&year)
+        || !(1..=12).contains(&month)
+        || day == 0
+        || day > days_in_month(year, month)
+    {
         return None;
     }
-    let y = year - if month <= 2 { 1 } else { 0 };
-    let era = if y >= 0 { y } else { y - 399 } / 400;
-    let yoe = y - era * 400;
-    let mp = month as i32 + if month > 2 { -3 } else { 9 };
-    let doy = (153 * mp + 2) / 5 + day as i32 - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    let days = era as i64 * 146_097 + doe as i64 - 719_468;
+    let days = days_from_civil(year, month, day);
     if days < 0 {
         return None;
     }
@@ -963,6 +961,11 @@ mod tests {
         );
         assert_eq!(parse_http_date("not a date"), None);
         assert_eq!(parse_http_date("Thu, 31 Feb 2026 00:00:00 GMT"), None);
+        assert_eq!(
+            parse_http_date("Sun, 06 Jan -2147483648 08:49:37 GMT"),
+            None
+        );
+        assert_eq!(parse_http_date("Sun, 06 Jan 10000 08:49:37 GMT"), None);
     }
 
     #[test]

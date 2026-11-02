@@ -77,10 +77,10 @@ pub const DEFAULT_MAX_THUMB_WIDTH: u64 = 400;
 ///
 /// This matches the reference board's header inspection limit and keeps a
 /// decompression bomb from reaching the decoder.
-pub const MAX_DIMENSION: u32 = 100_000;
+pub const MAX_DIMENSION: u32 = 32_768;
 
 /// Largest number of bytes the decoder may reserve for one image.
-pub const MAX_ALLOCATION: u64 = 512 * 1024 * 1024;
+pub const MAX_ALLOCATION: u64 = 128 * 1024 * 1024;
 
 /// JPEG re-encode quality, matching `imagejpeg($new_image, $destination, 90)`.
 pub const JPEG_QUALITY: u8 = 90;
@@ -294,6 +294,12 @@ pub fn plan(
 pub fn render(data: &[u8], format: Format, width: u32, height: u32) -> Result<Vec<u8>, String> {
     if width == 0 || height == 0 {
         return Err("target size is empty".to_string());
+    }
+    if width > MAX_DIMENSION || height > MAX_DIMENSION {
+        return Err(format!("target size exceeds maximum dimension {MAX_DIMENSION}"));
+    }
+    if u64::from(width) * u64::from(height) * 4 > MAX_ALLOCATION {
+        return Err("target size exceeds maximum allocation".to_string());
     }
     let mut reader = ImageReader::with_format(Cursor::new(data), format.image_format());
     let mut limits = Limits::default();
@@ -728,6 +734,12 @@ mod tests {
         let too_tall = png_with_dimensions(1, MAX_DIMENSION + 1);
         let error = render(&too_tall, Format::Png, 1, 400).unwrap_err();
         assert!(error.contains("limit"), "{error}");
+
+        let normal = png_with_dimensions(10, 10);
+        let error = render(&normal, Format::Png, MAX_DIMENSION + 1, 10).unwrap_err();
+        assert!(error.contains("maximum dimension"), "{error}");
+        let error = render(&normal, Format::Png, 30_000, 30_000).unwrap_err();
+        assert!(error.contains("maximum allocation"), "{error}");
     }
 
     #[test]

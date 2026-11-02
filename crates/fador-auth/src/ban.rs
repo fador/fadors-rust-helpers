@@ -279,10 +279,11 @@ impl BanPattern {
                 };
                 prefix.eq_ignore_ascii_case(pattern)
                     && (pattern.ends_with('.')
+                        || pattern.ends_with(':')
                         || value
                             .as_bytes()
                             .get(pattern.len())
-                            .is_none_or(|byte| *byte == b'.'))
+                            .is_none_or(|byte| matches!(*byte, b'.' | b':')))
             }
         }
     }
@@ -671,6 +672,7 @@ impl<S: BanStore> BanCache<S> {
         let fresh = state.as_ref().is_some_and(|cached| {
             cached.generation == generation
                 && self.ttl > 0
+                && now >= cached.loaded_at
                 && now.saturating_sub(cached.loaded_at) < self.ttl
         });
         if !fresh {
@@ -814,6 +816,13 @@ fn ipv6_scope(ip: Ipv6Addr) -> IpScope {
         IpScope::Multicast
     } else if v6_in_network(ip, [0x2001, 0x0db8, 0, 0, 0, 0, 0, 0], 32) {
         IpScope::Documentation
+    } else if v6_in_network(ip, [0x2001, 0x0002, 0, 0, 0, 0, 0, 0], 48) {
+        IpScope::Shared
+    } else if v6_in_network(ip, [0x2001, 0, 0, 0, 0, 0, 0, 0], 23) {
+        IpScope::Reserved
+    } else if v6_in_network(ip, [0x2002, 0, 0, 0, 0, 0, 0, 0], 16) {
+        let v4 = Ipv4Addr::from((u128::from(ip) >> 80) as u32);
+        ipv4_scope(v4)
     } else if v6_in_network(ip, [0x2000, 0, 0, 0, 0, 0, 0, 0], 3) {
         IpScope::Public
     } else {
@@ -907,6 +916,9 @@ mod tests {
         );
         assert!(BanPattern::prefix("192.168.").matches_ip(ip("192.168.1.7")));
         assert!(!BanPattern::prefix("192.168.").matches_ip(ip("192.169.1.7")));
+        assert!(BanPattern::prefix("2001:db8:").matches_ip(ip("2001:db8::1")));
+        assert!(BanPattern::prefix("2001:db8").matches_ip(ip("2001:db8::1")));
+        assert!(!BanPattern::prefix("2001:db").matches_ip(ip("2001:db8::1")));
         // For a non-address value a prefix is a plain prefix.
         assert!(BanPattern::prefix("spam@").matches("spam@example.test"));
     }
@@ -1050,6 +1062,9 @@ mod tests {
         assert_eq!(cache.invalidate(), generation + 1);
         assert!(cache.check(&subject, 1_061).unwrap().is_denied());
         assert_eq!(cache.store().loads.load(Ordering::SeqCst), 3);
+        // A clock rollback reloads the cache instead of treating it as fresh.
+        assert!(cache.check(&subject, 1_000).unwrap().is_denied());
+        assert_eq!(cache.store().loads.load(Ordering::SeqCst), 4);
     }
 
     #[test]
@@ -1141,6 +1156,11 @@ mod tests {
             ("fe80::1", IpScope::LinkLocal),
             ("ff02::1", IpScope::Multicast),
             ("2001:db8::1", IpScope::Documentation),
+            ("2001:2::1", IpScope::Shared),
+            ("2001::1", IpScope::Reserved),
+            ("2001:20::1", IpScope::Reserved),
+            ("2002:7f00:1::1", IpScope::Loopback),
+            ("2002:0a00:1::1", IpScope::Private),
             ("2606:4700::1111", IpScope::Public),
             ("::ffff:10.0.0.1", IpScope::Private),
             ("::ffff:8.8.8.8", IpScope::Public),

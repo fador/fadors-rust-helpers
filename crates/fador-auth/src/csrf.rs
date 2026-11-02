@@ -17,7 +17,7 @@
 use crate::constant_time_eq;
 use crate::session::SessionId;
 use fador_core::crypto::{hex, hmac_sha256, md5, sha1, sha256};
-use fador_core::random::{random_array, random_bytes, random_hex};
+use fador_core::random::{secure_random_array, secure_random_bytes, secure_random_hex};
 use std::fmt;
 
 /// The phpBB default form-token lifetime in seconds.
@@ -52,6 +52,10 @@ impl std::error::Error for CsrfError {}
 /// lowercase hexadecimal, where `token_sid` is the session id for a guest and
 /// empty for a logged-in visitor. The `creation_time` is sent alongside the
 /// token and bounds its age.
+///
+/// When `guest = false` is used, the salt must be per-user or per-session
+/// (matching phpBB's `user_form_salt`). Callers that use a single global salt
+/// should pass `guest = true` so `session_id` is bound into the hash.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FormKey {
     salt: String,
@@ -79,7 +83,7 @@ impl FormKey {
     /// Generate a form key with a random 16-byte salt.
     pub fn generate() -> Self {
         Self {
-            salt: random_hex(16),
+            salt: secure_random_hex(16),
         }
     }
 
@@ -93,7 +97,7 @@ impl FormKey {
     /// Call this after a login, a password change or a privilege change: every
     /// token minted with the old salt stops verifying immediately.
     pub fn rotate(&mut self) -> String {
-        self.salt = random_hex(16);
+        self.salt = secure_random_hex(16);
         self.salt.clone()
     }
 
@@ -189,12 +193,12 @@ impl SessionToken {
 }
 
 fn token_value(session_id: &SessionId) -> String {
-    let random = random_hex(8);
+    let random = secure_random_hex(8);
     hex(&md5(format!("{}{random}", session_id.as_str()).as_bytes()))
 }
 
 fn random_var() -> String {
-    let bytes = random_bytes(16);
+    let bytes = secure_random_bytes(16);
     let length = 7 + usize::from(bytes[0] % 6);
     bytes
         .iter()
@@ -286,7 +290,7 @@ impl CsrfTokens {
     pub fn generate(session_id: &SessionId) -> Self {
         Self {
             form: FormKey::generate(),
-            cookie: CookieToken::new(random_array::<32>()),
+            cookie: CookieToken::new(secure_random_array::<32>()),
             session: SessionToken::generate(session_id),
         }
     }
@@ -295,7 +299,7 @@ impl CsrfTokens {
     /// administrator re-authentication.
     pub fn rotate(&mut self, session_id: &SessionId) {
         self.form.rotate();
-        self.cookie = CookieToken::new(random_array::<32>());
+        self.cookie = CookieToken::new(secure_random_array::<32>());
         self.session.rotate(session_id);
     }
 
@@ -320,9 +324,15 @@ pub fn validate_form_salt(salt: &str) -> Result<(), CsrfError> {
     FormKey::new(salt).map(|_| ())
 }
 
-/// A random form salt, for storing it in a configuration row.
+/// A random form salt, for storing it in a per-user/per-session record or a
+/// configuration row.
+///
+/// When [`FormKey`] is called with `guest = false`, the salt must be per-user
+/// or per-session (matching phpBB's `user_form_salt`). Callers using a global
+/// configuration salt should pass `guest = true` so `session_id` is bound into
+/// the hash.
 pub fn generate_form_salt() -> String {
-    random_hex(16)
+    secure_random_hex(16)
 }
 
 #[cfg(test)]

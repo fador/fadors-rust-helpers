@@ -20,7 +20,7 @@
 
 use crate::error::{StoreError, StoreResult};
 use fador_core::crypto::{hex, sha256};
-use fador_core::random::{random_hex, try_random_bytes};
+use fador_core::random::{secure_random_hex, try_random_bytes};
 use std::collections::HashMap;
 use std::fmt;
 use std::net::IpAddr;
@@ -49,7 +49,7 @@ impl SessionId {
     /// OS source is unavailable. Use [`SessionId::try_generate`] on a security
     /// boundary where a failure must abort the request.
     pub fn generate() -> Self {
-        Self(random_hex(16))
+        Self(secure_random_hex(16))
     }
 
     /// Generate a session id, returning an error when the OS entropy source is
@@ -378,7 +378,7 @@ impl SessionStore for MemorySessionStore {
         if !rows.contains_key(record.id.as_str()) && rows.len() >= self.capacity {
             if let Some(oldest) = rows
                 .iter()
-                .min_by_key(|(_, row)| row.last_seen)
+                .min_by_key(|(_, row)| (!row.is_guest(), row.last_seen))
                 .map(|(id, _)| id.clone())
             {
                 rows.remove(&oldest);
@@ -543,7 +543,7 @@ impl RememberMeKey {
     pub fn generate(user_id: u64) -> Self {
         Self {
             user_id,
-            token: random_hex(16),
+            token: secure_random_hex(16),
         }
     }
 
@@ -707,12 +707,15 @@ impl RememberMeStore for MemoryRememberMeStore {
         let mut rows = self.lock();
         let key = (record.user_id, record.token_hash);
         if !rows.contains_key(&key) && rows.len() >= self.capacity {
-            if let Some(oldest) = rows
-                .iter()
-                .min_by_key(|(_, row)| row.created)
-                .map(|(key, _)| *key)
-            {
-                rows.remove(&oldest);
+            rows.retain(|_, row| row.expires > record.created);
+            if rows.len() >= self.capacity {
+                if let Some(oldest) = rows
+                    .iter()
+                    .min_by_key(|(_, row)| row.created)
+                    .map(|(key, _)| *key)
+                {
+                    rows.remove(&oldest);
+                }
             }
         }
         rows.insert(key, record.clone());
@@ -984,6 +987,16 @@ mod tests {
         assert!(manager.store().load(&first.id).unwrap().is_none());
         assert!(manager.store().load(&second.id).unwrap().is_some());
         assert!(manager.store().load(&third.id).unwrap().is_some());
+
+        // Guest sessions are evicted before authenticated user sessions.
+        let store = MemorySessionStore::new(2);
+        let manager = SessionManager::new(store, SessionPolicy::default());
+        let user = manager.login(None, 7, 1, &binding()).unwrap();
+        let guest1 = manager.start_guest(2, &binding()).unwrap();
+        let guest2 = manager.start_guest(3, &binding()).unwrap();
+        assert!(manager.store().load(&user.id).unwrap().is_some());
+        assert!(manager.store().load(&guest1.id).unwrap().is_none());
+        assert!(manager.store().load(&guest2.id).unwrap().is_some());
     }
 
     #[test]
@@ -1033,6 +1046,18 @@ mod tests {
         assert_ne!(rotated.token, key.token);
         assert!(key.verify(&store, 1_011).unwrap().is_none());
         assert!(rotated.verify(&store, 1_011).unwrap().is_some());
+
+        // At capacity, expired records are purged before evicting active records.
+        let store = MemoryRememberMeStore::new(2);
+        let expired = RememberMeKey::generate(1);
+        let active = RememberMeKey::generate(2);
+        let incoming = RememberMeKey::generate(3);
+        expired.issue(&store, 10, 50, None).unwrap();
+        active.issue(&store, 5, 1_000, None).unwrap();
+        incoming.issue(&store, 100, 1_000, None).unwrap();
+        assert!(expired.verify(&store, 100).unwrap().is_none());
+        assert!(active.verify(&store, 100).unwrap().is_some());
+        assert!(incoming.verify(&store, 100).unwrap().is_some());
     }
 
     #[test]

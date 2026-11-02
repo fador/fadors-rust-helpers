@@ -159,6 +159,7 @@ fn scan_scheme(url: &str) -> SchemeScan {
     let mut name = String::new();
     let mut spaced = false;
     let mut invalid = false;
+    let mut previous = '\0';
     for ch in url.chars() {
         match ch {
             ':' => {
@@ -167,6 +168,10 @@ fn scan_scheme(url: &str) -> SchemeScan {
                 }
                 return SchemeScan::Scheme { name, spaced };
             }
+            // `&#` opens a numeric character reference, which a browser
+            // decodes even without the closing `;` (`javascript&#58alert(1)`).
+            // It may hide the `:` of a scheme, so it is not a fragment start.
+            '#' if previous == '&' => return SchemeScan::Invalid,
             '/' | '?' | '#' => return SchemeScan::None,
             c if c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.') => {
                 name.push(c.to_ascii_lowercase());
@@ -174,6 +179,7 @@ fn scan_scheme(url: &str) -> SchemeScan {
             c if c.is_ascii_whitespace() => spaced = true,
             _ => invalid = true,
         }
+        previous = ch;
     }
     SchemeScan::None
 }
@@ -288,6 +294,11 @@ mod tests {
             "\u{202e}javascript:alert(1)",
             "java\u{200b}script:alert(1)",
             "javascript&colon;alert(1)",
+            "javascript&#00000000058;alert(1)",
+            "javascript&#x0000000003a;alert(1)",
+            "javascript&#58alert(1)",
+            "javascript&#x3aalert(1)",
+            "&#106;avascript:alert(1)",
         ] {
             assert!(!is_safe_url(url, &SchemePolicy::STRICT), "{url:?}");
             assert!(!is_safe_url(url, &SchemePolicy::WEB), "{url:?}");

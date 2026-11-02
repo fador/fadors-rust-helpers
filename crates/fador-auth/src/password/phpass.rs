@@ -8,7 +8,7 @@
 
 use crate::constant_time_eq;
 use fador_core::crypto::{hex, md5};
-use fador_core::random::random_array;
+use fador_core::random::secure_random_array;
 
 const ITOA64: &[u8; 64] = b"./0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
@@ -49,7 +49,7 @@ pub fn hash_with_log2(password: &str, log2: u32) -> Option<String> {
     if !(MIN_LOG2..=MAX_LOG2).contains(&log2) {
         return None;
     }
-    let salt = random_array::<8>();
+    let salt = secure_random_array::<8>();
     let mut setting = String::with_capacity(12);
     setting.push_str("$P$");
     setting.push(ITOA64[log2 as usize] as char);

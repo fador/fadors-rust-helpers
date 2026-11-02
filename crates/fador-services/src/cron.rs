@@ -463,8 +463,8 @@ impl LeaderLock {
     /// heartbeat may be stolen; a negative value is treated as zero.
     pub fn refresh(&mut self, now: i64, stale_after: i64) -> bool {
         let stale_after = stale_after.max(0);
-        match fs::read_to_string(&self.path) {
-            Ok(content) if content.starts_with(&self.token) => {
+        match read_lock_content(&self.path) {
+            Ok(content) if content.split_whitespace().next() == Some(&self.token) => {
                 if write_atomic(&self.path, lock_contents(&self.token, now).as_bytes()).is_ok() {
                     self.held = true;
                     return true;
@@ -511,8 +511,8 @@ impl LeaderLock {
         if !self.held {
             return;
         }
-        if let Ok(content) = fs::read_to_string(&self.path) {
-            if content.starts_with(&self.token) {
+        if let Ok(content) = read_lock_content(&self.path) {
+            if content.split_whitespace().next() == Some(&self.token) {
                 let _ = fs::remove_file(&self.path);
             }
         }
@@ -540,7 +540,7 @@ impl RunLock {
     /// process that died mid-run cannot block every later trigger.
     pub fn acquire(path: impl Into<PathBuf>, now: i64, stale_after: i64) -> Option<Self> {
         let path = path.into();
-        if let Ok(content) = fs::read_to_string(&path) {
+        if let Ok(content) = read_lock_content(&path) {
             let fresh = lock_timestamp(&content)
                 .map(|timestamp| now.saturating_sub(timestamp) <= stale_after.max(0))
                 .unwrap_or(false);
@@ -567,12 +567,19 @@ impl RunLock {
 
 impl Drop for RunLock {
     fn drop(&mut self) {
-        if let Ok(content) = fs::read_to_string(&self.path) {
-            if content.starts_with(&self.token) {
+        if let Ok(content) = read_lock_content(&self.path) {
+            if content.split_whitespace().next() == Some(&self.token) {
                 let _ = fs::remove_file(&self.path);
             }
         }
     }
+}
+
+fn read_lock_content(path: &Path) -> std::io::Result<String> {
+    let file = fs::File::open(path)?;
+    let mut buf = Vec::new();
+    file.take(256).read_to_end(&mut buf)?;
+    String::from_utf8(buf).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
 }
 
 fn append_suffix(path: &Path, suffix: &str) -> PathBuf {

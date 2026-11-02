@@ -362,3 +362,100 @@ fn fuzz_form_and_multipart_parsers() {
         }
     }
 }
+
+#[test]
+fn multi_header_forwarded_for_and_proto_prefer_proxy_appended_values() {
+    let mut cfg = config();
+    cfg.trust_proxy_headers = true;
+    cfg.trusted_proxies = vec!["127.0.0.1".into()];
+
+    let raw = b"GET / HTTP/1.1\r\n\
+                Host: example.test\r\n\
+                X-Forwarded-For: 1.2.3.4\r\n\
+                X-Forwarded-For: 203.0.113.9, 127.0.0.1\r\n\
+                X-Forwarded-Proto: https\r\n\
+                X-Forwarded-Proto: http\r\n\r\n";
+    let request = parse(raw, &cfg).ok().flatten().expect("valid request");
+    assert_eq!(request.client_ip, "203.0.113.9".parse::<IpAddr>().unwrap());
+    assert_eq!(request.scheme, "http");
+}
+
+#[test]
+fn request_line_and_header_line_endings_are_strictly_validated() {
+    // Missing HTTP version is rejected instead of defaulting to HTTP/1.1.
+    expect_status(b"GET /\r\nHost: x\r\n\r\n", 400);
+    // Tabs or bare CRs in the request line are rejected.
+    expect_status(b"GET\t/\tHTTP/1.1\r\nHost: x\r\n\r\n", 400);
+    expect_status(b"GET / HTTP/1.1\r\r\nHost: x\r\n\r\n", 400);
+    // Double CR before LF in a header line leaves a bare CR and is rejected.
+    expect_status(b"GET / HTTP/1.1\r\nHost: x\r\nX-Test: val\r\r\n\r\n", 400);
+
+    // Connection token matching must be exact comma-separated tokens, not substrings.
+    let req = parse(
+        b"GET / HTTP/1.1\r\nHost: x\r\nConnection: enclose\r\n\r\n",
+        &config(),
+    )
+    .ok()
+    .flatten()
+    .expect("valid request");
+    assert!(req.keep_alive, "Connection: enclose must not match 'close'");
+
+    let req = parse(
+        b"GET / HTTP/1.1\r\nHost: x\r\nConnection: upgrade, close\r\n\r\n",
+        &config(),
+    )
+    .ok()
+    .flatten()
+    .expect("valid request");
+    assert!(!req.keep_alive, "Connection: upgrade, close must close");
+}
+
+#[test]
+fn response_reason_cannot_inject_headers() {
+    let cfg = config();
+    let resp = Response::text(200, "OK\r\nX-Injected: yes", "hello".into());
+    let wire = prepare_response(&cfg, resp, &FramingOptions::default());
+    assert!(wire.head.starts_with("HTTP/1.1 200 OK\r\n"), "{}", wire.head);
+    assert!(!wire.head.contains("X-Injected"));
+}
+
+#[test]
+fn slowloris_header_trickle_and_keep_alive_idle_timeout_are_enforced() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let cfg = Arc::new(HttpConfig {
+        read_timeout_seconds: 1,
+        keep_alive_seconds: 1,
+        ..config()
+    });
+    let handler: Arc<Handler> = Arc::new(|_| Response::text(200, "OK", "ok".into()));
+    let worker = {
+        let cfg = Arc::clone(&cfg);
+        let handler = Arc::clone(&handler);
+        std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            handle_connection(stream, &cfg, &handler);
+        })
+    };
+
+    let mut client = TcpStream::connect(address).unwrap();
+    client
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
+    client.write_all(b"GET / HTTP/1.1\r\nHost: x\r\n").unwrap();
+    for _ in 0..4 {
+        std::thread::sleep(Duration::from_millis(350));
+        if client.write_all(b"X-Slow: 1\r\n").is_err() {
+            break;
+        }
+    }
+    let mut reply = Vec::new();
+    let _ = client.read_to_end(&mut reply);
+    worker.join().unwrap();
+    let text = String::from_utf8_lossy(&reply);
+    assert!(
+        text.is_empty() || text.starts_with("HTTP/1.1 400 Bad Request\r\n"),
+        "slowloris trickle must time out: {text}"
+    );
+}
+

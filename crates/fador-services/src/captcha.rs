@@ -156,8 +156,20 @@ impl Default for CaptchaOptions {
 
 /// Draw a friendly code from the operating system random source.
 pub fn friendly_code() -> String {
-    let bytes = random_bytes(MAX_CODE_LENGTH + 1);
-    friendly_code_from(&bytes)
+    // Rejection sampling: 238 is the largest multiple of 34 (alphabet length) <= 256.
+    let mut filtered = Vec::with_capacity(MAX_CODE_LENGTH + 1);
+    while filtered.len() <= MAX_CODE_LENGTH {
+        let chunk = random_bytes(16);
+        for b in chunk {
+            if b < 238 {
+                filtered.push(b);
+                if filtered.len() > MAX_CODE_LENGTH {
+                    break;
+                }
+            }
+        }
+    }
+    friendly_code_from(&filtered)
 }
 
 /// Draw a friendly code from caller-supplied bytes.
@@ -292,8 +304,19 @@ pub fn render_png(code: &str, options: &CaptchaOptions) -> Option<Vec<u8>> {
 pub fn render_wav(code: &str) -> Vec<u8> {
     let mut samples = Vec::new();
     for character in code.chars().take(MAX_GLYPHS) {
-        let step = u32::from(character).wrapping_sub(u32::from('A'));
-        let frequency = 300.0 + f64::from(step % 20) * 40.0;
+        let step = if let Some(pos) = FRIENDLY_ALPHABET.iter().position(|&b| b == character as u8) {
+            pos as u32
+        } else if character.is_ascii_alphanumeric() {
+            let c = character.to_ascii_uppercase();
+            if c.is_ascii_digit() {
+                30 + (c as u32 - '0' as u32)
+            } else {
+                c as u32 - 'A' as u32
+            }
+        } else {
+            u32::from(character)
+        };
+        let frequency = 260.0 + f64::from(step % 36) * 25.0;
         for index in 0..WAV_TONE_SAMPLES {
             let time = index as f64 / f64::from(WAV_SAMPLE_RATE);
             let sample = (2.0 * std::f64::consts::PI * frequency * time).sin();
@@ -467,6 +490,9 @@ pub fn is_plain_http_url(url: &str) -> bool {
     }
     let authority = rest.split('/').next().unwrap_or("");
     !authority.is_empty()
+        && !authority.contains('@')
+        && !authority.contains('?')
+        && !authority.contains('#')
 }
 
 /// Verify a provider response token.
@@ -535,10 +561,11 @@ fn post_plain_http(config: &ProviderConfig, body: &str) -> Result<(u16, String),
         Some((authority, path)) => (authority, format!("/{path}")),
         None => (rest, "/".to_string()),
     };
-    let authority = authority
-        .rsplit_once('@')
-        .map(|(_, host)| host)
-        .unwrap_or(authority);
+    if authority.contains('@') || authority.contains('?') || authority.contains('#') {
+        return Err(ProviderError::Config(
+            "the verifier authority contains invalid characters",
+        ));
+    }
     let (host, port) = split_authority(authority)
         .ok_or(ProviderError::Config("the verifier authority is invalid"))?;
     if host.is_empty() {
@@ -608,7 +635,40 @@ fn post_plain_http(config: &ProviderConfig, body: &str) -> Result<(u16, String),
         .and_then(|line| line.split_whitespace().nth(1))
         .and_then(|code| code.parse::<u16>().ok())
         .ok_or_else(|| ProviderError::Unavailable("the verifier status is invalid".into()))?;
-    Ok((status, payload.to_string()))
+    let is_chunked = head.lines().any(|line| {
+        let mut parts = line.splitn(2, ':');
+        let name = parts.next().unwrap_or("").trim();
+        let val = parts.next().unwrap_or("").trim();
+        name.eq_ignore_ascii_case("transfer-encoding") && val.eq_ignore_ascii_case("chunked")
+    });
+    let payload = if is_chunked {
+        decode_chunked(payload).ok_or_else(|| {
+            ProviderError::Unavailable("the verifier chunked body is malformed".into())
+        })?
+    } else {
+        payload.to_string()
+    };
+    Ok((status, payload))
+}
+
+fn decode_chunked(payload: &str) -> Option<String> {
+    let mut out = String::new();
+    let mut rest = payload;
+    while !rest.is_empty() {
+        let (size_line, after_line) = rest.split_once("\r\n")?;
+        let size_str = size_line.split(';').next()?.trim();
+        let chunk_size = usize::from_str_radix(size_str, 16).ok()?;
+        if chunk_size == 0 {
+            break;
+        }
+        if after_line.len() < chunk_size {
+            return None;
+        }
+        out.push_str(&after_line[..chunk_size]);
+        let remainder = &after_line[chunk_size..];
+        rest = remainder.strip_prefix("\r\n")?;
+    }
+    Some(out)
 }
 
 fn split_authority(authority: &str) -> Option<(&str, u16)> {
@@ -1314,5 +1374,35 @@ mod tests {
             Err(ProviderError::Config(_))
         ));
         assert!(!accepts(&empty_secret, "token", "127.0.0.1"));
+
+        let invalid_authority =
+            ProviderConfig::new(Provider::Turnstile, "sec", "http://user:pass@127.0.0.1/verify");
+        assert!(matches!(
+            verify_provider(&invalid_authority, "token", "127.0.0.1"),
+            Err(ProviderError::Config(_))
+        ));
+    }
+
+    #[test]
+    fn provider_handles_chunked_transfer_encoding() {
+        let (port, server) = verifier(
+            "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\
+             Connection: close\r\n\r\n10\r\n{\"success\":true}\r\n0\r\n\r\n",
+        );
+        assert_eq!(
+            verify_provider(&config(port), "token value", "127.0.0.1"),
+            Ok(true)
+        );
+        let _ = server.join();
+
+        let (port, server) = verifier(
+            "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\
+             Connection: close\r\n\r\n11\r\n{\"success\":false}\r\n0\r\n\r\n",
+        );
+        assert_eq!(
+            verify_provider(&config(port), "token value", "127.0.0.1"),
+            Ok(false)
+        );
+        let _ = server.join();
     }
 }

@@ -559,15 +559,23 @@ pub fn base64_decode(input: &str) -> Option<Vec<u8>> {
     let mut out = Vec::with_capacity(input.len() * 3 / 4);
     let mut buf = 0u32;
     let mut bits = 0u32;
+    let mut pad_count = 0u32;
     for ch in input.bytes() {
         let v = match ch {
+            b'\r' | b'\n' | b' ' | b'\t' => continue,
+            b'=' => {
+                pad_count += 1;
+                if pad_count > 2 || bits == 0 || bits == 6 || (bits == 2 && pad_count > 1) {
+                    return None;
+                }
+                continue;
+            }
+            _ if pad_count > 0 => return None,
             b'A'..=b'Z' => ch - b'A',
             b'a'..=b'z' => ch - b'a' + 26,
             b'0'..=b'9' => ch - b'0' + 52,
             b'+' => 62,
             b'/' => 63,
-            b'=' => break,
-            b'\r' | b'\n' | b' ' | b'\t' => continue,
             _ => return None,
         } as u32;
         buf = (buf << 6) | v;
@@ -576,6 +584,9 @@ pub fn base64_decode(input: &str) -> Option<Vec<u8>> {
             bits -= 8;
             out.push(((buf >> bits) & 0xff) as u8);
         }
+    }
+    if bits == 6 || (pad_count == 1 && bits == 4) {
+        return None;
     }
     Some(out)
 }
@@ -651,16 +662,22 @@ pub fn blake2b(data: &[u8], out_len: usize) -> Vec<u8> {
     let out_len = out_len.clamp(1, 64);
     let mut state = BLAKE2B_IV;
     state[0] ^= 0x0101_0000 ^ out_len as u64;
-    let mut counter = 0u64;
-    let (blocks, remainder) = data.as_chunks::<128>();
-    for block in blocks {
-        counter = counter.wrapping_add(128);
-        blake2b_compress(&mut state, block, counter, 0);
+    if data.is_empty() {
+        blake2b_compress(&mut state, &[0u8; 128], 0, u64::MAX);
+    } else {
+        let mut counter = 0u64;
+        let mut chunks = data.chunks(128).peekable();
+        while let Some(chunk) = chunks.next() {
+            counter = counter.wrapping_add(chunk.len() as u64);
+            if chunks.peek().is_some() {
+                blake2b_compress(&mut state, chunk, counter, 0);
+            } else {
+                let mut final_block = [0u8; 128];
+                final_block[..chunk.len()].copy_from_slice(chunk);
+                blake2b_compress(&mut state, &final_block, counter, u64::MAX);
+            }
+        }
     }
-    let mut final_block = [0u8; 128];
-    final_block[..remainder.len()].copy_from_slice(remainder);
-    counter = counter.wrapping_add(remainder.len() as u64);
-    blake2b_compress(&mut state, &final_block, counter, u64::MAX);
     let mut out = Vec::with_capacity(out_len);
     for word in state {
         out.extend_from_slice(&word.to_le_bytes());
@@ -826,6 +843,16 @@ mod tests {
             hex(&blake2b(b"abc", 32)),
             "bddd813c634239723171ef3fee98579b94964e3bb1cb3e427262c8c068d52319"
         );
+        assert_eq!(
+            hex(&blake2b(&[b'a'; 128], 64)),
+            "fc6c71f688f43ea7d60817478808f3cac753e61571865c95adbc2d9122c943a7\
+             6b92c2cb1047ef3fe7bf6e436ec1d0a99a9e5b216780bf7fed9d7ca91d3a8f3b"
+        );
+        assert_eq!(
+            hex(&blake2b(&[b'a'; 256], 64)),
+            "0eee13d0c73a2710c5015a8b4be0a16120bb88f826b662951ffe4b3b81441cfd\
+             ce1f712c58e237dba72a0dad7f9c86b9745ea0b4b3b850ff3a260fb7df9d3e81"
+        );
     }
 
     #[test]
@@ -872,5 +899,11 @@ mod tests {
         for v in [b"".as_slice(), b"a", b"ab", b"abc", b"hello world"] {
             assert_eq!(base64_decode(&base64_encode(v)).unwrap(), v);
         }
+        assert!(base64_decode("YQ==garbage").is_none());
+        assert!(base64_decode("YQ===").is_none());
+        assert!(base64_decode("YWI== ").is_none());
+        assert!(base64_decode("Y").is_none());
+        assert!(base64_decode("YWJjZA=").is_none());
+        assert!(base64_decode("=").is_none());
     }
 }

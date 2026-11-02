@@ -176,13 +176,16 @@ pub(crate) fn sanitize_attrs(raw: &str) -> String {
         let name_start = index;
         while index < bytes.len()
             && !bytes[index].is_ascii_whitespace()
-            && bytes[index] != b'='
-            && bytes[index] != b'>'
+            && !matches!(bytes[index], b'=' | b'>' | b'/' | b'"' | b'\'' | b'<')
         {
             index += 1;
         }
         if name_start == index {
-            break;
+            if bytes[index] == b'>' {
+                break;
+            }
+            index += 1;
+            continue;
         }
         let name = raw[name_start..index].to_ascii_lowercase();
         while index < bytes.len() && bytes[index].is_ascii_whitespace() {
@@ -216,9 +219,19 @@ pub(crate) fn sanitize_attrs(raw: &str) -> String {
                 value = raw[value_start..index].to_string();
             }
         }
-        if !fador_markup::is_allowed_attr(&name) {
+        if !name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b':' | b'.'))
+            || !fador_markup::is_allowed_attr(&name)
+        {
             continue;
         }
+        if matches!(name.as_str(), "style" | "href" | "cite" | "src" | "poster")
+            && value.bytes().any(|b| b < 0x20 || b == 0x7f)
+        {
+            continue;
+        }
+        value.retain(|c| !matches!(c, '\u{1}' | '\u{2}' | '\u{4}'));
         // A browser decodes character references in an attribute before it
         // parses a URL or a style, so an entity-encoded `javascript:` must be
         // judged decoded. Re-escaping afterwards keeps the stored spelling
@@ -399,6 +412,22 @@ mod tests {
         assert_eq!(
             sanitize_attrs("src=\"https://cdn.test/x.png\""),
             " src=\"https://cdn.test/x.png\""
+        );
+        assert!(
+            !sanitize_attrs("data-x\"onclick=\"alert(1)\"")
+                .to_ascii_lowercase()
+                .contains("onclick")
+        );
+        assert!(
+            !sanitize_attrs("data-x'onclick='alert(1)'")
+                .to_ascii_lowercase()
+                .contains("onclick")
+        );
+        assert_eq!(sanitize_attrs("style=\"background:\u{2}0\u{2}\""), "");
+        assert_eq!(sanitize_attrs("href=\"\u{2}0\u{2}\""), "");
+        assert_eq!(
+            sanitize_attrs("title=\"\u{1}TOC\u{1}\""),
+            " title=\"TOC\""
         );
     }
 

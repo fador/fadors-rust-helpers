@@ -34,6 +34,8 @@ const CLIENT_TRANSACTIONS: u32 = 0x0000_2000;
 const CLIENT_SECURE_CONNECTION: u32 = 0x0000_8000;
 const CLIENT_MULTI_STATEMENTS: u32 = 0x0001_0000;
 const CLIENT_MULTI_RESULTS: u32 = 0x0002_0000;
+const SERVER_STATUS_IN_TRANS: u16 = 0x0001;
+const SERVER_MORE_RESULTS_EXISTS: u16 = 0x0008;
 const CLIENT_PLUGIN_AUTH: u32 = 0x0008_0000;
 const CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA: u32 = 0x0020_0000;
 
@@ -155,21 +157,39 @@ pub fn format_sql(sql: &str, params: &[SqlValue<'_>]) -> String {
                 quote = b;
                 push_char(&mut out, sql, &mut i);
             }
-            b'-' if i + 1 < bytes.len() && bytes[i + 1] == b'-' => {
+            b'-' if i + 1 < bytes.len()
+                && bytes[i + 1] == b'-'
+                && (i + 2 >= bytes.len()
+                    || bytes[i + 2].is_ascii_whitespace()
+                    || bytes[i + 2] < 0x20
+                    || bytes[i + 2] == 0x7f) =>
+            {
+                while i < bytes.len() && bytes[i] != b'\n' {
+                    push_char(&mut out, sql, &mut i);
+                }
+            }
+            b'#' => {
                 while i < bytes.len() && bytes[i] != b'\n' {
                     push_char(&mut out, sql, &mut i);
                 }
             }
             b'/' if i + 1 < bytes.len() && bytes[i + 1] == b'*' => {
+                let is_live = i + 2 < bytes.len() && (bytes[i + 2] == b'!' || bytes[i + 2] == b'+');
                 out.push_str("/*");
                 i += 2;
-                while i + 1 < bytes.len() && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
-                    push_char(&mut out, sql, &mut i);
+                if !is_live {
+                    while i + 1 < bytes.len() && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
+                        push_char(&mut out, sql, &mut i);
+                    }
+                    if i + 1 < bytes.len() {
+                        out.push_str("*/");
+                        i += 2;
+                    }
                 }
-                if i + 1 < bytes.len() {
-                    out.push_str("*/");
-                    i += 2;
-                }
+            }
+            b'*' if i + 1 < bytes.len() && bytes[i + 1] == b'/' => {
+                out.push_str("*/");
+                i += 2;
             }
             b'?' => {
                 if idx < params.len() {
@@ -333,6 +353,7 @@ pub struct Connection {
     io: PacketIo,
     pub last_used: Instant,
     pub broken: bool,
+    pub in_transaction: bool,
 }
 
 impl Connection {
@@ -373,17 +394,17 @@ impl Connection {
             | CLIENT_LONG_FLAG
             | CLIENT_PROTOCOL_41
             | CLIENT_TRANSACTIONS
-            | CLIENT_SECURE_CONNECTION
-            | CLIENT_MULTI_RESULTS;
+            | CLIENT_SECURE_CONNECTION;
         if !params.database.is_empty() {
             caps |= CLIENT_CONNECT_WITH_DB;
         }
         if hs.capabilities & CLIENT_PLUGIN_AUTH != 0 {
             caps |= CLIENT_PLUGIN_AUTH;
         }
-        // Explicitly avoid CLIENT_MULTI_STATEMENTS: user input must never be
-        // able to smuggle a second statement.
-        let _ = CLIENT_MULTI_STATEMENTS;
+        // Explicitly avoid CLIENT_MULTI_STATEMENTS and CLIENT_MULTI_RESULTS:
+        // user input must never be able to smuggle a second statement or leave
+        // trailing result sets.
+        let _ = (CLIENT_MULTI_STATEMENTS, CLIENT_MULTI_RESULTS);
         caps &= hs.capabilities | CLIENT_LONG_PASSWORD;
 
         let plugin = if hs.auth_plugin.is_empty() {
@@ -420,12 +441,16 @@ impl Connection {
         }
         io.write_packet(&resp)?;
 
-        // Authentication conversation.
+        // Authentication conversation bounded to prevent infinite server loops.
         let mut auth_plugin = plugin;
-        loop {
+        let mut auth_ok = false;
+        for _ in 0..8 {
             let packet = io.read_packet()?;
             match packet.first().copied() {
-                Some(0x00) => break,
+                Some(0x00) => {
+                    auth_ok = true;
+                    break;
+                }
                 Some(0xff) => return Err(parse_error(&packet)),
                 Some(0xfe) => {
                     // AuthSwitchRequest
@@ -470,16 +495,25 @@ impl Connection {
                 }
             }
         }
+        if !auth_ok {
+            return Err(MysqlError::Protocol(
+                "authentication exchange exceeded packet limit".into(),
+            ));
+        }
 
         let mut conn = Self {
             io,
             last_used: Instant::now(),
             broken: false,
+            in_transaction: false,
         };
         // Make sure client and server agree on UTF-8.  Failure is not fatal:
         // some old MySQL versions use different names, and the handshake
         // charset already selected utf8mb4_general_ci.
         let _ = conn.execute("SET NAMES utf8mb4");
+        if conn.broken {
+            return Err(MysqlError::Protocol("initial SET NAMES utf8mb4 failed".into()));
+        }
         Ok(conn)
     }
 
@@ -537,13 +571,26 @@ impl Connection {
     }
 
     fn read_query_result(&mut self) -> Result<QueryResult, MysqlError> {
-        let packet = self.io.read_packet()?;
+        let packet = match self.io.read_packet() {
+            Ok(p) => p,
+            Err(e) => {
+                self.broken = true;
+                return Err(e);
+            }
+        };
         let first = *packet
             .first()
-            .ok_or_else(|| MysqlError::Protocol("empty query response".into()))?;
+            .ok_or_else(|| {
+                self.broken = true;
+                MysqlError::Protocol("empty query response".into())
+            })?;
         match first {
             0x00 => {
-                let (affected, insert_id) = parse_ok(&packet);
+                let (affected, insert_id, status_flags) = parse_ok(&packet);
+                self.in_transaction = status_flags & SERVER_STATUS_IN_TRANS != 0;
+                if status_flags & SERVER_MORE_RESULTS_EXISTS != 0 {
+                    self.broken = true;
+                }
                 Ok(QueryResult {
                     last_insert_id: insert_id,
                     affected_rows: affected,
@@ -551,39 +598,79 @@ impl Connection {
                 })
             }
             0xff => Err(parse_error(&packet)),
-            0xfb => Err(MysqlError::Unsupported(
-                "LOCAL INFILE requests are disabled".into(),
-            )),
+            0xfb => {
+                self.broken = true;
+                Err(MysqlError::Unsupported(
+                    "LOCAL INFILE requests are disabled".into(),
+                ))
+            }
             _ => {
                 let mut pos = 0;
-                let count = read_lenenc_int(&packet, &mut pos)
-                    .ok_or_else(|| MysqlError::Protocol("bad column count".into()))?
-                    as usize;
+                let count = match read_lenenc_int(&packet, &mut pos) {
+                    Some(c) => c as usize,
+                    None => {
+                        self.broken = true;
+                        return Err(MysqlError::Protocol("bad column count".into()));
+                    }
+                };
                 if count > 4096 {
+                    self.broken = true;
                     return Err(MysqlError::Protocol("too many result columns".into()));
                 }
                 let mut columns = Vec::with_capacity(count);
                 for _ in 0..count {
-                    let p = self.io.read_packet()?;
+                    let p = match self.io.read_packet() {
+                        Ok(p) => p,
+                        Err(e) => {
+                            self.broken = true;
+                            return Err(e);
+                        }
+                    };
                     if p.first() == Some(&0xff) {
+                        self.broken = true;
                         return Err(parse_error(&p));
                     }
-                    columns.push(parse_column(&p)?);
+                    match parse_column(&p) {
+                        Ok(col) => columns.push(col),
+                        Err(e) => {
+                            self.broken = true;
+                            return Err(e);
+                        }
+                    }
                 }
                 // EOF after column definitions.
-                let eof = self.io.read_packet()?;
+                let eof = match self.io.read_packet() {
+                    Ok(p) => p,
+                    Err(e) => {
+                        self.broken = true;
+                        return Err(e);
+                    }
+                };
                 if !is_eof(&eof) {
+                    self.broken = true;
                     return Err(MysqlError::Protocol(
                         "expected EOF after result columns".into(),
                     ));
                 }
                 let mut rows = Vec::new();
                 loop {
-                    let p = self.io.read_packet()?;
+                    let p = match self.io.read_packet() {
+                        Ok(p) => p,
+                        Err(e) => {
+                            self.broken = true;
+                            return Err(e);
+                        }
+                    };
                     if p.first() == Some(&0xff) {
+                        self.broken = true;
                         return Err(parse_error(&p));
                     }
                     if is_eof(&p) {
+                        let status_flags = eof_status_flags(&p);
+                        self.in_transaction = status_flags & SERVER_STATUS_IN_TRANS != 0;
+                        if status_flags & SERVER_MORE_RESULTS_EXISTS != 0 {
+                            self.broken = true;
+                        }
                         break;
                     }
                     // Do not treat a leading 0x00 as an OK packet here.  This
@@ -591,8 +678,15 @@ impl Connection {
                     // result set is terminated by an EOF packet only.  A row
                     // whose first column is an empty string starts with 0x00
                     // too, and dropping it silently lost whole rows.
-                    rows.push(parse_row(&p, count)?);
+                    match parse_row(&p, count) {
+                        Ok(row) => rows.push(row),
+                        Err(e) => {
+                            self.broken = true;
+                            return Err(e);
+                        }
+                    }
                     if rows.len() > 1_000_000 {
+                        self.broken = true;
                         return Err(MysqlError::Protocol("result set too large".into()));
                     }
                 }
@@ -706,15 +800,28 @@ fn parse_error(packet: &[u8]) -> MysqlError {
     }
 }
 
-fn parse_ok(packet: &[u8]) -> (u64, u64) {
+fn parse_ok(packet: &[u8]) -> (u64, u64, u16) {
     let mut pos = 1;
     let affected = read_lenenc_int(packet, &mut pos).unwrap_or(0);
     let insert_id = read_lenenc_int(packet, &mut pos).unwrap_or(0);
-    (affected, insert_id)
+    let status_flags = if pos + 2 <= packet.len() {
+        u16::from_le_bytes([packet[pos], packet[pos + 1]])
+    } else {
+        0
+    };
+    (affected, insert_id, status_flags)
 }
 
 fn is_eof(packet: &[u8]) -> bool {
     packet.first() == Some(&0xfe) && packet.len() < 9
+}
+
+fn eof_status_flags(packet: &[u8]) -> u16 {
+    if packet.len() >= 5 && packet.first() == Some(&0xfe) {
+        u16::from_le_bytes([packet[3], packet[4]])
+    } else {
+        0
+    }
 }
 
 fn parse_column(packet: &[u8]) -> Result<Column, MysqlError> {
@@ -1020,11 +1127,19 @@ impl PooledConnection<'_> {
 
 impl Drop for PooledConnection<'_> {
     fn drop(&mut self) {
+        let mut conn = self.conn.take();
+        if self.reusable {
+            if let Some(ref mut c) = conn {
+                if c.in_transaction && !c.broken {
+                    let _ = c.execute("ROLLBACK");
+                }
+            }
+        }
         let mut inner = self.pool.inner.lock().unwrap_or_else(|e| e.into_inner());
         if self.reusable {
-            if let Some(conn) = self.conn.take() {
-                if !conn.broken && inner.idle.len() < self.pool.max_size {
-                    inner.idle.push(conn);
+            if let Some(c) = conn {
+                if !c.broken && !c.in_transaction && inner.idle.len() < self.pool.max_size {
+                    inner.idle.push(c);
                 } else {
                     inner.total = inner.total.saturating_sub(1);
                 }

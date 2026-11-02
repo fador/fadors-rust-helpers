@@ -386,6 +386,7 @@ fn html_escape(input: &str) -> String {
             '>' => out.push_str("&gt;"),
             '"' => out.push_str("&quot;"),
             '\'' => out.push_str("&#039;"),
+            '\0' => out.push('\u{fffd}'),
             _ => out.push(ch),
         }
     }
@@ -416,7 +417,7 @@ fn html_attr_escape(input: &str) -> String {
     out
 }
 
-fn js_escape(input: &str) -> String {
+pub(crate) fn js_escape(input: &str) -> String {
     let mut out = String::with_capacity(input.len() + 16);
     for ch in input.chars() {
         match ch {

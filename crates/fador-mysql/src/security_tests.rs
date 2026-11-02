@@ -126,3 +126,43 @@ fn fuzz_placeholder_builder() {
         }
     }
 }
+
+#[test]
+fn sql_comment_edge_cases_and_executable_comments() {
+    // MySQL requires whitespace or control characters after `--` for it to start a comment.
+    // Expressions like `a--1` (decrement or double negation) are not comments.
+    let sql = format_sql("SELECT a--1, ?", &[SqlValue::Int(42)]);
+    assert_eq!(sql, "SELECT a--1, 42");
+
+    // `#` is always a line comment in MySQL.
+    let sql = format_sql("SELECT # comment with ?\n?", &[SqlValue::Int(42)]);
+    assert_eq!(sql, "SELECT # comment with ?\n42");
+
+    // `/*! ... */` is an executable comment in MySQL; placeholders inside it must be replaced.
+    let sql = format_sql("SELECT /*!50000 ? */", &[SqlValue::Int(99)]);
+    assert_eq!(sql, "SELECT /*!50000 99 */");
+
+    // Optimizer hints `/*+ ... */` also retain placeholders.
+    let sql = format_sql("SELECT /*+ BKA(t1) */ ?", &[SqlValue::Int(7)]);
+    assert_eq!(sql, "SELECT /*+ BKA(t1) */ 7");
+
+    // Standard block comments `/* ... */` do NOT replace placeholders.
+    let sql = format_sql("SELECT /* standard comment ? */ ?", &[SqlValue::Int(5)]);
+    assert_eq!(sql, "SELECT /* standard comment ? */ 5");
+}
+
+#[test]
+fn parse_ok_and_eof_status_flags_track_transactions() {
+    // OK packet: header 0x00, affected rows 0, insert id 0, status_flags (SERVER_STATUS_IN_TRANS = 0x0001)
+    let ok_packet = [0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00];
+    let (affected, insert_id, status) = parse_ok(&ok_packet);
+    assert_eq!(affected, 0);
+    assert_eq!(insert_id, 0);
+    assert_eq!(status & SERVER_STATUS_IN_TRANS, SERVER_STATUS_IN_TRANS);
+
+    // EOF packet: header 0xfe, warnings 0, status_flags 0x0001
+    let eof_packet = [0xfe, 0x00, 0x00, 0x01, 0x00];
+    assert!(is_eof(&eof_packet));
+    let status = eof_status_flags(&eof_packet);
+    assert_eq!(status & SERVER_STATUS_IN_TRANS, SERVER_STATUS_IN_TRANS);
+}

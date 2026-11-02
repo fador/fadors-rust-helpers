@@ -995,6 +995,11 @@ fn authenticate(
     reader: &mut BufReader<TcpStream>,
     mechanisms: &[String],
 ) -> Result<(), MailError> {
+    if config.username.contains(['\0', '\r', '\n']) || config.password.contains(['\0', '\r', '\n']) {
+        return Err(MailError::Protocol(
+            "SMTP credentials must not contain NUL, CR, or LF".into(),
+        ));
+    }
     let advertised = |name: &str| mechanisms.iter().any(|mechanism| mechanism == name);
     let have_capabilities = !mechanisms.is_empty();
     let mut attempts = 0usize;
@@ -1094,6 +1099,10 @@ fn read_reply<R: BufRead>(reader: &mut R) -> Result<Reply, MailError> {
             .ok_or_else(|| MailError::Protocol("a reply line has no status code".into()))?;
         if code == 0 {
             code = status;
+        } else if status != code {
+            return Err(MailError::Protocol(format!(
+                "inconsistent status code in multiline reply: expected {code}, got {status}"
+            )));
         }
         let continuation = line.as_bytes().get(3) == Some(&b'-');
         lines.push(line.get(4..).unwrap_or("").to_string());

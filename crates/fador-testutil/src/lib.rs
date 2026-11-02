@@ -4,6 +4,7 @@
 //! small fixed-seed PRNG.  Fixed seeds keep failures reproducible while still
 //! exercising thousands of malformed inputs in normal `cargo test`.
 
+#![deny(unsafe_code)]
 #![allow(dead_code)]
 #![allow(missing_docs)]
 

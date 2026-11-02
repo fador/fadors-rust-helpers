@@ -52,7 +52,7 @@ use std::fs::File;
 use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::net::{IpAddr, SocketAddr, TcpListener, TcpStream};
 use std::sync::{mpsc, Arc};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use util::{now_http_date, parse_multipart_form};
 pub use util::{parse_form, parse_form_with};
 
@@ -649,7 +649,16 @@ fn handle_connection(stream: TcpStream, config: &HttpConfig, handler: &Arc<Handl
     let mut writer = stream;
     let mut served = 0usize;
     loop {
-        let req = match read_request(&mut reader, peer, config) {
+        if served > 0 {
+            let _ = writer.set_read_timeout(Some(Duration::from_secs(
+                config.keep_alive_seconds.clamp(1, 30),
+            )));
+        } else {
+            let _ = writer.set_read_timeout(Some(Duration::from_secs(
+                config.read_timeout_seconds.max(1),
+            )));
+        }
+        let req = match read_request_with_stream(&mut reader, Some(&writer), peer, config) {
             Ok(Some(request)) => request,
             Ok(None) => break,
             Err(resp) => {
@@ -705,13 +714,34 @@ fn handle_connection(stream: TcpStream, config: &HttpConfig, handler: &Arc<Handl
     }
 }
 
+#[cfg(test)]
 fn read_request<R: BufRead>(
     reader: &mut R,
     peer: SocketAddr,
     config: &HttpConfig,
 ) -> Result<Option<Request>, Response> {
+    read_request_with_stream(reader, None, peer, config)
+}
+
+fn strip_line_ending(line: &mut Vec<u8>) {
+    if line.ends_with(b"\n") {
+        line.pop();
+        if line.ends_with(b"\r") {
+            line.pop();
+        }
+    }
+}
+
+fn read_request_with_stream<R: BufRead>(
+    reader: &mut R,
+    stream: Option<&TcpStream>,
+    peer: SocketAddr,
+    config: &HttpConfig,
+) -> Result<Option<Request>, Response> {
+    let read_budget = Duration::from_secs(config.read_timeout_seconds.max(1));
+    let mut deadline: Option<Instant> = None;
     let mut line = Vec::new();
-    match read_line_bounded(reader, &mut line, 8192) {
+    match read_line_bounded(reader, &mut line, 8192, &mut deadline, read_budget, stream) {
         Ok(0) => return Ok(None),
         Ok(_) => {}
         Err(LineError::TooLong) => {
@@ -723,17 +753,20 @@ fn read_request<R: BufRead>(
         }
         Err(LineError::Io) => return Ok(None),
     }
-    while line.ends_with(b"\n") || line.ends_with(b"\r") {
-        line.pop();
-    }
+    strip_line_ending(&mut line);
     if line.is_empty() {
         return Ok(None);
+    }
+    if line.contains(&b'\r') || line.contains(&b'\t') {
+        return Err(bad_request("invalid character in request line"));
     }
     let line = String::from_utf8_lossy(&line);
     let mut parts = line.split_whitespace();
     let method = parts.next().ok_or_else(|| bad_request("missing method"))?;
     let target = parts.next().ok_or_else(|| bad_request("missing target"))?;
-    let version = parts.next().unwrap_or("HTTP/1.1");
+    let version = parts
+        .next()
+        .ok_or_else(|| bad_request("missing HTTP version"))?;
     if parts.next().is_some() {
         return Err(bad_request("malformed request line"));
     }
@@ -782,7 +815,7 @@ fn read_request<R: BufRead>(
             .max_header_bytes
             .saturating_sub(header_bytes)
             .max(1024);
-        let n = match read_line_bounded(reader, &mut h, remaining) {
+        let n = match read_line_bounded(reader, &mut h, remaining, &mut deadline, read_budget, stream) {
             Ok(n) => n,
             Err(LineError::TooLong) => {
                 return Err(Response::text(
@@ -804,11 +837,12 @@ fn read_request<R: BufRead>(
                 "Request headers too large".into(),
             ));
         }
-        while h.ends_with(b"\n") || h.ends_with(b"\r") {
-            h.pop();
-        }
+        strip_line_ending(&mut h);
         if h.is_empty() {
             break;
+        }
+        if h.contains(&b'\r') {
+            return Err(bad_request("bare CR in header"));
         }
         if h[0] == b' ' || h[0] == b'\t' {
             return Err(bad_request("obsolete header folding"));
@@ -915,23 +949,47 @@ fn read_request<R: BufRead>(
         return Err(bad_request("POST without content-length"));
     }
     let mut body = vec![0u8; content_length];
-    if content_length > 0 {
-        reader
-            .read_exact(&mut body)
+    let mut read_body = 0usize;
+    while read_body < content_length {
+        if let Some(dl) = deadline {
+            let now = Instant::now();
+            if now > dl {
+                return Err(bad_request("request body read timed out"));
+            }
+            if let Some(s) = stream {
+                let _ = s.set_read_timeout(Some(
+                    dl.saturating_duration_since(now)
+                        .max(Duration::from_millis(1)),
+                ));
+            }
+        }
+        let n = reader
+            .read(&mut body[read_body..])
             .map_err(|_| bad_request("truncated request body"))?;
+        if n == 0 {
+            return Err(bad_request("truncated request body"));
+        }
+        read_body += n;
     }
     let mut keep_alive = http11;
-    if let Some(conn) = headers
+    let mut has_close = false;
+    let mut has_keep_alive = false;
+    for (_, conn) in headers
         .iter()
-        .find(|(k, _)| k.eq_ignore_ascii_case("connection"))
-        .map(|(_, v)| v.as_str())
+        .filter(|(k, _)| k.eq_ignore_ascii_case("connection"))
     {
-        let l = conn.to_ascii_lowercase();
-        if l.contains("close") {
-            keep_alive = false;
-        } else if l.contains("keep-alive") {
-            keep_alive = true;
+        for token in conn.split(',').map(str::trim) {
+            if token.eq_ignore_ascii_case("close") {
+                has_close = true;
+            } else if token.eq_ignore_ascii_case("keep-alive") {
+                has_keep_alive = true;
+            }
         }
+    }
+    if has_close {
+        keep_alive = false;
+    } else if has_keep_alive {
+        keep_alive = true;
     }
     let trusted =
         config.trust_proxy_headers && is_trusted_proxy(peer.ip(), &config.trusted_proxies);
@@ -943,6 +1001,7 @@ fn read_request<R: BufRead>(
     if trusted {
         scheme = headers
             .iter()
+            .rev()
             .find(|(k, _)| k.eq_ignore_ascii_case("x-forwarded-proto"))
             .and_then(|(_, value)| value.rsplit(',').next())
             .map(|value| value.trim().to_ascii_lowercase())
@@ -955,17 +1014,14 @@ fn read_request<R: BufRead>(
             scheme = "https".into();
         }
     }
-    let forwarded = headers
+    let forwarded_values: Vec<&str> = headers
         .iter()
-        .find(|(k, _)| k.eq_ignore_ascii_case("x-forwarded-for"));
-    let client_ip = if (trusted || local_proxy) && forwarded.is_some() {
-        forwarded_client_ip(
-            forwarded
-                .map(|(_, value)| value.as_str())
-                .unwrap_or_default(),
-            peer.ip(),
-            &config.trusted_proxies,
-        )
+        .filter(|(k, _)| k.eq_ignore_ascii_case("x-forwarded-for"))
+        .map(|(_, value)| value.as_str())
+        .collect();
+    let client_ip = if (trusted || local_proxy) && !forwarded_values.is_empty() {
+        let combined = forwarded_values.join(", ");
+        forwarded_client_ip(&combined, peer.ip(), &config.trusted_proxies)
     } else {
         peer.ip()
     };
@@ -1015,16 +1071,49 @@ fn read_line_bounded<R: BufRead>(
     reader: &mut R,
     out: &mut Vec<u8>,
     max: usize,
+    deadline: &mut Option<Instant>,
+    budget: Duration,
+    stream: Option<&TcpStream>,
 ) -> Result<usize, LineError> {
     // Read through the buffered reader instead of one byte at a time. The
-    // `take` limit keeps a hostile peer from making us allocate an unbounded
-    // line before the length check.
-    let mut limited = reader.by_ref().take(max as u64 + 1);
-    let total = limited.read_until(b'\n', out).map_err(|_| LineError::Io)?;
-    if total <= max && (out.ends_with(b"\n") || total < max) {
-        Ok(total)
-    } else {
-        Err(LineError::TooLong)
+    // length and deadline checks keep a hostile peer from making us allocate an
+    // unbounded line or trickle one byte per timeout window.
+    let mut total = 0usize;
+    loop {
+        if let Some(dl) = *deadline {
+            let now = Instant::now();
+            if now > dl {
+                return Err(LineError::Io);
+            }
+            if let Some(s) = stream {
+                let _ = s.set_read_timeout(Some(
+                    dl.saturating_duration_since(now)
+                        .max(Duration::from_millis(1)),
+                ));
+            }
+        }
+        let available = reader.fill_buf().map_err(|_| LineError::Io)?;
+        if available.is_empty() {
+            return Ok(total);
+        }
+        if deadline.is_none() {
+            *deadline = Some(Instant::now() + budget);
+        }
+        let limit = (max + 1).saturating_sub(total);
+        let window = &available[..available.len().min(limit)];
+        let (used, done) = match window.iter().position(|&b| b == b'\n') {
+            Some(pos) => (pos + 1, true),
+            None => (window.len(), window.len() == limit && limit > 0),
+        };
+        out.extend_from_slice(&window[..used]);
+        reader.consume(used);
+        total += used;
+        if total > max || (total == max && !out.ends_with(b"\n")) {
+            return Err(LineError::TooLong);
+        }
+        if done {
+            return Ok(total);
+        }
     }
 }
 
@@ -1052,6 +1141,44 @@ fn valid_header_value(value: &str) -> bool {
         && !value
             .chars()
             .any(|c| c == '\0' || c == '\r' || c == '\n' || (c.is_control() && c != '\t'))
+}
+
+fn status_reason(status: u16) -> &'static str {
+    match status {
+        100 => "Continue",
+        101 => "Switching Protocols",
+        200 => "OK",
+        201 => "Created",
+        202 => "Accepted",
+        204 => "No Content",
+        206 => "Partial Content",
+        301 => "Moved Permanently",
+        302 => "Found",
+        303 => "See Other",
+        304 => "Not Modified",
+        307 => "Temporary Redirect",
+        308 => "Permanent Redirect",
+        400 => "Bad Request",
+        401 => "Unauthorized",
+        403 => "Forbidden",
+        404 => "Not Found",
+        405 => "Method Not Allowed",
+        408 => "Request Timeout",
+        409 => "Conflict",
+        410 => "Gone",
+        413 => "Payload Too Large",
+        414 => "URI Too Long",
+        415 => "Unsupported Media Type",
+        422 => "Unprocessable Content",
+        429 => "Too Many Requests",
+        431 => "Request Header Fields Too Large",
+        500 => "Internal Server Error",
+        501 => "Not Implemented",
+        502 => "Bad Gateway",
+        503 => "Service Unavailable",
+        505 => "HTTP Version Not Supported",
+        _ => "OK",
+    }
 }
 
 /// Cut a redirect target at the first byte that cannot appear in a header value.
@@ -1093,7 +1220,12 @@ fn response_head(
     framing: Framing,
 ) -> String {
     let mut head = String::with_capacity(512);
-    head.push_str(&format!("HTTP/1.1 {} {}\r\n", resp.status, resp.reason));
+    let reason = if valid_header_value(resp.reason) {
+        resp.reason
+    } else {
+        status_reason(resp.status)
+    };
+    head.push_str(&format!("HTTP/1.1 {} {}\r\n", resp.status, reason));
     head.push_str(&format!("Date: {}\r\n", now_http_date()));
     let mut seen: Vec<String> = Vec::new();
     if !config.server_header.is_empty() && valid_header_value(&config.server_header) {

@@ -12,7 +12,7 @@
 
 use crate::constant_time_eq;
 use crate::password::blowfish_consts::{P, S};
-use fador_core::random::random_array;
+use fador_core::random::secure_random_array;
 
 const BCRYPT_B64: &[u8; 64] = b"./ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 
@@ -36,12 +36,14 @@ pub fn hash_with_cost(password: &str, cost: u32) -> String {
     hash_with_salt(
         password,
         cost.clamp(MIN_COST, MAX_VERIFY_COST),
-        random_array::<16>(),
+        secure_random_array::<16>(),
     )
 }
 
 /// Hash a password with an explicit cost and salt.
 pub fn hash_with_salt(password: &str, cost: u32, salt: [u8; 16]) -> String {
+    // Keep the encoded cost identical to the work actually performed.
+    let cost = cost.clamp(MIN_COST, MAX_VERIFY_COST);
     let material = key_material(password);
     let output = bcrypt(cost, salt, &material);
     format!(

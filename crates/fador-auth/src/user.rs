@@ -17,10 +17,19 @@ use std::collections::HashMap;
 use std::fmt;
 use std::sync::Mutex;
 
-/// A bcrypt hash of a value no visitor knows. It is verified when the submitted
-/// login name does not resolve, so an unknown account costs the same as a known
-/// one.
+/// A dummy hash of a value no visitor knows. It is verified when the submitted
+/// login name does not resolve or names an inactive account, so an unknown or
+/// inactive account costs the same as a known active one.
+#[cfg(any(
+    feature = "bcrypt",
+    all(not(feature = "bcrypt"), not(feature = "mediawiki-pbkdf2"))
+))]
 const DUMMY_HASH: &str = "$2y$10$u/a4ZTIgnxqS1ATR8n2wNunuxzZ5uhjnw9GmxNqStOompVzhBJwye";
+
+/// A PBKDF2 dummy hash used when `bcrypt` is disabled and `mediawiki-pbkdf2` is
+/// enabled.
+#[cfg(all(not(feature = "bcrypt"), feature = "mediawiki-pbkdf2"))]
+const DUMMY_HASH: &str = ":pbkdf2:sha256:120000:32:MDEyMzQ1Njc4OWFiY2RlZg==:tiKWHy4FAGCWE8gn6GtKhaxD2OeeAUUWXFT/p1aaNl8=";
 
 /// The lifecycle state of an account.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -145,11 +154,12 @@ pub trait UserStore {
 /// ```
 pub fn normalize_login(value: &str) -> String {
     repair_mojibake(value)
-        .replace("&amp;", "&")
         .replace("&lt;", "<")
         .replace("&gt;", ">")
         .replace("&quot;", "\"")
         .replace("&#039;", "'")
+        .replace("&#39;", "'")
+        .replace("&amp;", "&")
         .trim()
         .to_lowercase()
 }
@@ -218,7 +228,7 @@ pub fn authenticate(
     if login.is_empty() {
         return Ok(LoginOutcome::UnknownUser);
     }
-    if password.is_empty() {
+    if password.is_empty() || password.len() > crate::password::MAX_PASSWORD_LEN {
         return Ok(LoginOutcome::WrongPassword);
     }
     let Some(user) = users.find_by_login(&login)? else {
@@ -226,6 +236,7 @@ pub fn authenticate(
         return Ok(LoginOutcome::UnknownUser);
     };
     if !user.is_active() {
+        let _ = verifier.verify(DUMMY_HASH, password);
         return Ok(LoginOutcome::Inactive);
     }
     let context = PasswordContext::new(&user.username, user.id);
@@ -328,6 +339,8 @@ mod tests {
         assert_eq!(normalize_login("Matti&amp;Maija"), "matti&maija");
         assert_eq!(normalize_login("&quot;Quoted&quot;"), "\"quoted\"");
         assert_eq!(normalize_login("O&#039;Neil"), "o'neil");
+        assert_eq!(normalize_login("O&#39;Neil"), "o'neil");
+        assert_eq!(normalize_login("&amp;lt;"), "&lt;");
         assert_eq!(normalize_login(""), "");
     }
 
@@ -352,6 +365,16 @@ mod tests {
         );
         assert_eq!(
             authenticate(&store, &verifier, "Test", "").unwrap(),
+            LoginOutcome::WrongPassword
+        );
+        assert_eq!(
+            authenticate(
+                &store,
+                &verifier,
+                "Test",
+                &"a".repeat(crate::password::MAX_PASSWORD_LEN + 1)
+            )
+            .unwrap(),
             LoginOutcome::WrongPassword
         );
         assert_eq!(

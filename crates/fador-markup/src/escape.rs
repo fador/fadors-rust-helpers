@@ -200,19 +200,32 @@ fn parse_reference(rest: &str) -> Option<(char, usize)> {
         return None;
     }
     let decoded = if let Some(hex) = body.strip_prefix("#x").or_else(|| body.strip_prefix("#X")) {
-        if hex.is_empty() || hex.len() > 8 || !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        if hex.is_empty() || !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
             return None;
         }
-        let value = u32::from_str_radix(hex, 16).ok()?;
+        let hex_sig = hex.trim_start_matches('0');
+        if hex_sig.len() > 8 {
+            return None;
+        }
+        let value = if hex_sig.is_empty() {
+            0
+        } else {
+            u32::from_str_radix(hex_sig, 16).ok()?
+        };
         numeric_character(value)
     } else if let Some(decimal) = body.strip_prefix('#') {
-        if decimal.is_empty()
-            || decimal.len() > 8
-            || !decimal.bytes().all(|byte| byte.is_ascii_digit())
-        {
+        if decimal.is_empty() || !decimal.bytes().all(|byte| byte.is_ascii_digit()) {
             return None;
         }
-        let value = decimal.parse::<u32>().ok()?;
+        let dec_sig = decimal.trim_start_matches('0');
+        if dec_sig.len() > 8 {
+            return None;
+        }
+        let value = if dec_sig.is_empty() {
+            0
+        } else {
+            dec_sig.parse::<u32>().ok()?
+        };
         numeric_character(value)
     } else {
         if body.len() > 32 || !body.bytes().all(|byte| byte.is_ascii_alphanumeric()) {
@@ -376,6 +389,10 @@ mod tests {
     #[test]
     fn maps_invalid_code_points_to_replacement() {
         assert_eq!(decode_entities("&#0;"), "\u{fffd}");
+        assert_eq!(decode_entities("&#000000000000;"), "\u{fffd}");
+        assert_eq!(decode_entities("&#x000000000000;"), "\u{fffd}");
+        assert_eq!(decode_entities("&#00000000058;"), ":");
+        assert_eq!(decode_entities("&#x0000000003a;"), ":");
         assert_eq!(decode_entities("&#xD800;"), "\u{fffd}");
         assert_eq!(decode_entities("&#x110000;"), "\u{fffd}");
         assert_eq!(decode_entities("&#999999999999;"), "&#999999999999;");

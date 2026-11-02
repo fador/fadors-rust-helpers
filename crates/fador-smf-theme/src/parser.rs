@@ -323,14 +323,34 @@ pub fn parse(input: &str) -> Result<Vec<Stmt>, ParseError> {
     Parser::new(tokens).parse_program()
 }
 
+const MAX_PARSE_DEPTH: usize = 64;
+
 struct Parser {
     tokens: Vec<Token>,
     pos: usize,
+    depth: usize,
 }
 
 impl Parser {
     fn new(tokens: Vec<Token>) -> Self {
-        Self { tokens, pos: 0 }
+        Self {
+            tokens,
+            pos: 0,
+            depth: 0,
+        }
+    }
+
+    fn enter_depth(&mut self) -> Result<(), ParseError> {
+        self.depth += 1;
+        if self.depth > MAX_PARSE_DEPTH {
+            Err(self.error_here("nesting depth exceeded"))
+        } else {
+            Ok(())
+        }
+    }
+
+    fn leave_depth(&mut self) {
+        self.depth = self.depth.saturating_sub(1);
     }
 
     fn parse_program(&mut self) -> Result<Vec<Stmt>, ParseError> {
@@ -362,6 +382,13 @@ impl Parser {
     }
 
     fn parse_statement(&mut self) -> Result<Stmt, ParseError> {
+        self.enter_depth()?;
+        let res = self.parse_statement_inner();
+        self.leave_depth();
+        res
+    }
+
+    fn parse_statement_inner(&mut self) -> Result<Stmt, ParseError> {
         if let Some(text) = self.take_text() {
             return Ok(Stmt::Text(text));
         }
@@ -726,6 +753,13 @@ impl Parser {
     }
 
     fn parse_unary(&mut self) -> Result<Expr, ParseError> {
+        self.enter_depth()?;
+        let res = self.parse_unary_inner();
+        self.leave_depth();
+        res
+    }
+
+    fn parse_unary_inner(&mut self) -> Result<Expr, ParseError> {
         if self.eat_symbol("!") {
             return Ok(Expr::Unary(UnOp::Not, Box::new(self.parse_unary()?)));
         }

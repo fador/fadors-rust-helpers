@@ -67,7 +67,10 @@ pub use date::{
     TimeStrings,
 };
 pub use format::{format_placeholders, MAX_PADDING};
-pub use pack::{normalize_language_code, EmbeddedPacks, LanguagePack, LanguageSet, PackError};
+pub use pack::{
+    is_valid_language_code, normalize_language_code, EmbeddedPacks, LanguagePack, LanguageSet,
+    PackError,
+};
 pub use plural::{plural_form, select_plural, select_plural_entries, PLURAL_RULES};
 pub use tz::{
     is_known, is_valid_zone_name, local_parts, offset_for, zone_names, LocalTime, PosixTz, TzError,

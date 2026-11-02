@@ -284,6 +284,7 @@ pub fn unserialize_with_budget(input: &str, max_bytes: usize) -> Result<PhpValue
         bytes: input.as_bytes(),
         pos: 0,
         depth: 0,
+        entries: 0,
     };
     let value = parser.value()?;
     if parser.pos != parser.bytes.len() {
@@ -345,6 +346,7 @@ struct Parser<'a> {
     bytes: &'a [u8],
     pos: usize,
     depth: usize,
+    entries: usize,
 }
 
 impl Parser<'_> {
@@ -409,12 +411,14 @@ impl Parser<'_> {
                     .until(b':')?
                     .parse::<usize>()
                     .map_err(|_| PhpError::Format("invalid array length".into()))?;
-                if count > MAX_SERIALIZED_ENTRIES {
+                self.entries = self.entries.saturating_add(count);
+                if count > MAX_SERIALIZED_ENTRIES || self.entries > MAX_SERIALIZED_ENTRIES {
                     return Err(PhpError::Limit("serialised array is too large".into()));
                 }
                 self.expect(b'{')?;
-                let mut items = Vec::with_capacity(count);
-                let mut seen = HashSet::with_capacity(count);
+                let initial_cap = count.min((self.bytes.len() - self.pos) / 4).min(64);
+                let mut items = Vec::with_capacity(initial_cap);
+                let mut seen = HashSet::with_capacity(initial_cap);
                 for _ in 0..count {
                     let key = match self.take(1)?[0] {
                         b'i' => {
@@ -607,5 +611,13 @@ mod tests {
             input.push('}');
         }
         assert!(unserialize(&input).is_err());
+
+        // Cumulative entries across nested arrays cannot exceed MAX_SERIALIZED_ENTRIES.
+        let mut cumulative = format!("a:2:{{i:0;a:{MAX_SERIALIZED_ENTRIES}:{{");
+        for i in 0..MAX_SERIALIZED_ENTRIES {
+            cumulative.push_str(&format!("i:{i};N;"));
+        }
+        cumulative.push_str("}i:1;N;}");
+        assert!(matches!(unserialize(&cumulative), Err(PhpError::Limit(_))));
     }
 }

@@ -84,11 +84,61 @@ pub fn random_array<const N: usize>() -> [u8; N] {
     out
 }
 
+/// Return `len` bytes from the operating-system CSPRNG, panicking if it is
+/// unavailable.
+///
+/// This is for security boundaries whose API cannot return an error (session
+/// ids, CSRF tokens, password salts). Unlike [`random_bytes`] it never falls
+/// back to a predictable seed: a token an attacker can guess is worse than a
+/// failed request. This matches the behaviour of the standard library's
+/// `RandomState` and the `getrandom` crate.
+///
+/// # Panics
+///
+/// Panics when the OS entropy source cannot be read.
+pub fn secure_random_bytes(len: usize) -> Vec<u8> {
+    match try_random_bytes(len) {
+        Ok(bytes) => bytes,
+        Err(error) => panic!("{error}; refusing to generate a predictable secret"),
+    }
+}
+
+/// Lowercase hexadecimal of `bytes` bytes from [`secure_random_bytes`].
+///
+/// # Panics
+///
+/// Panics when the OS entropy source cannot be read.
+pub fn secure_random_hex(bytes: usize) -> String {
+    hex(&secure_random_bytes(bytes))
+}
+
+/// A fixed-size array from [`secure_random_bytes`].
+///
+/// # Panics
+///
+/// Panics when the OS entropy source cannot be read.
+pub fn secure_random_array<const N: usize>() -> [u8; N] {
+    let mut out = [0u8; N];
+    out.copy_from_slice(&secure_random_bytes(N)[..N]);
+    out
+}
+
 fn os_random(len: usize) -> Option<Vec<u8>> {
     #[cfg(unix)]
     {
+        static URANDOM: std::sync::OnceLock<fs::File> = std::sync::OnceLock::new();
+        if URANDOM.get().is_none() {
+            if let Ok(file) = fs::File::open("/dev/urandom") {
+                let _ = URANDOM.set(file);
+            }
+        }
+        let mut out = vec![0u8; len];
+        if let Some(file) = URANDOM.get() {
+            if (&*file).read_exact(&mut out).is_ok() {
+                return Some(out);
+            }
+        }
         if let Ok(mut file) = fs::File::open("/dev/urandom") {
-            let mut out = vec![0u8; len];
             if file.read_exact(&mut out).is_ok() {
                 return Some(out);
             }
@@ -143,5 +193,10 @@ mod tests {
         assert_eq!(random_hex(16).len(), 32);
         let array: [u8; 8] = random_array();
         assert_eq!(array.len(), 8);
+        assert_eq!(secure_random_hex(16).len(), 32);
+        assert_ne!(secure_random_hex(16), secure_random_hex(16));
+        let array: [u8; 8] = secure_random_array();
+        assert_eq!(array.len(), 8);
+        assert!(secure_random_bytes(0).is_empty());
     }
 }

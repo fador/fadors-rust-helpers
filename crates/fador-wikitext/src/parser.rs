@@ -348,7 +348,17 @@ impl<'a> Renderer<'a> {
             ("__EXPECTED_UNCONNECTED_PAGE__", "drop"),
             ("__DISAMBIG__", "drop"),
         ];
-        let mut out = text.replace("__TOC__", TOC_MARKER);
+        let mut out = String::with_capacity(text.len());
+        for (index, line) in text.split('\n').enumerate() {
+            if index > 0 {
+                out.push('\n');
+            }
+            if line.contains("__TOC__") && !line.contains('<') && !line.contains('>') {
+                out.push_str(&line.replace("__TOC__", TOC_MARKER));
+            } else {
+                out.push_str(line);
+            }
+        }
         if out.contains(TOC_MARKER) {
             self.state.toc_explicit = true;
         }
@@ -573,7 +583,9 @@ impl<'a> Renderer<'a> {
         } else {
             process_template_source(&raw)
         };
-        processed = processed.trim_start_matches('\u{feff}').to_string();
+        processed = strip_comments(&normalize_source(
+            processed.trim_start_matches('\u{feff}'),
+        ));
         self.ctx.cache.templates.put(key, Some(processed.clone()));
         Some(processed)
     }
@@ -724,7 +736,8 @@ impl<'a> Renderer<'a> {
                     let width = args
                         .first()
                         .and_then(|value| value.trim().parse::<usize>().ok())
-                        .unwrap_or(0);
+                        .unwrap_or(0)
+                        .min(500);
                     let fill = args
                         .get(1)
                         .and_then(|value| value.chars().next())
@@ -995,7 +1008,7 @@ impl<'a> Renderer<'a> {
                 let length: Option<usize> = args.get(2).and_then(|value| value.trim().parse().ok());
                 let characters: Vec<char> = text.chars().collect();
                 let end = length
-                    .map(|length| (start + length).min(characters.len()))
+                    .map(|length| start.saturating_add(length).min(characters.len()))
                     .unwrap_or(characters.len());
                 Some(characters.get(start..end).unwrap_or(&[]).iter().collect())
             }

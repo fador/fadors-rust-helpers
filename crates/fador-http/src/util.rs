@@ -113,8 +113,11 @@ pub(crate) fn parse_multipart_form(content_type: &str, body: &[u8]) -> Vec<(Stri
             break;
         };
         let mut value_end = value_start + next;
-        while value_end > value_start && matches!(body[value_end - 1], b'\r' | b'\n') {
+        if value_end > value_start && body[value_end - 1] == b'\n' {
             value_end -= 1;
+            if value_end > value_start && body[value_end - 1] == b'\r' {
+                value_end -= 1;
+            }
         }
         let mut name = None;
         let mut is_file = false;
@@ -233,6 +236,13 @@ mod tests {
                 ("group_desc".to_string(), "Hei\r\nmaailma".to_string()),
             ]
         );
+    }
+
+    #[test]
+    fn preserves_intentional_trailing_newlines_in_multipart_fields() {
+        let body = b"--XyZ\r\nContent-Disposition: form-data; name=\"message\"\r\n\r\nline1\r\n\r\n\r\n--XyZ--\r\n";
+        let fields = parse_multipart_form("multipart/form-data; boundary=XyZ", body);
+        assert_eq!(fields, vec![("message".to_string(), "line1\r\n\r\n".to_string())]);
     }
 
     #[test]
