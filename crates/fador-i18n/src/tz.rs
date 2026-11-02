@@ -478,6 +478,17 @@ pub struct Tzdb {
 }
 
 impl Tzdb {
+    /// An empty database.
+    ///
+    /// Every named zone resolves to UTC until one is added with
+    /// [`Tzdb::insert`] or loaded with [`Tzdb::load_dir`].
+    #[must_use]
+    pub fn empty() -> Self {
+        Self {
+            zones: BTreeMap::new(),
+        }
+    }
+
     /// The database compiled into the crate.
     ///
     /// The archive is parsed once and cached for the life of the process. A
@@ -1403,6 +1414,14 @@ mod tests {
         let replacement = Zone::parse_tzif(archive_blob("Europe/Helsinki")).expect("Helsinki");
         assert!(tz.insert("Europe/Helsinki", replacement).is_some());
         assert_eq!(tz.len(), 1);
+    }
+
+    #[test]
+    fn empty_database_is_usable() {
+        let tz = Tzdb::empty();
+        assert!(tz.is_empty());
+        assert!(!tz.is_known("Europe/Helsinki"));
+        assert!(tz.zone("Europe/Helsinki").is_none());
     }
 
     #[test]

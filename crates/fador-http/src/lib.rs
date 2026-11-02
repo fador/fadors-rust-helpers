@@ -53,7 +53,8 @@ use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::net::{IpAddr, SocketAddr, TcpListener, TcpStream};
 use std::sync::{mpsc, Arc};
 use std::time::Duration;
-use util::{now_http_date, parse_form, parse_multipart_form};
+use util::{now_http_date, parse_multipart_form};
+pub use util::{parse_form, parse_form_with};
 
 /// Upper bound for one chunk of a `Transfer-Encoding: chunked` response body.
 ///
@@ -68,6 +69,34 @@ pub const RESPONSE_CHUNK_SIZE: usize = 16 * 1024;
 /// reference board's policy: a `200` file body of at most 4 MiB is re-framed as
 /// chunks, a larger one keeps its length.
 pub const FILE_CONTENT_LENGTH_LIMIT: u64 = 4 * 1024 * 1024;
+
+/// Which bytes separate fields in a query string or a form body.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FormSeparators {
+    /// Split on `&`.
+    pub ampersand: bool,
+    /// Split on `;`, the legacy PHP `arg_separator.input` behaviour.
+    pub semicolon: bool,
+}
+
+impl FormSeparators {
+    /// Only `&`, the modern form encoding.
+    pub const AMPERSAND: Self = Self {
+        ampersand: true,
+        semicolon: false,
+    };
+    /// Both `&` and `;`, for boards that kept PHP's legacy separator.
+    pub const AMPERSAND_AND_SEMICOLON: Self = Self {
+        ampersand: true,
+        semicolon: true,
+    };
+}
+
+impl Default for FormSeparators {
+    fn default() -> Self {
+        Self::AMPERSAND
+    }
+}
 
 /// A parsed HTTP request.
 pub struct Request {
@@ -93,6 +122,8 @@ pub struct Request {
     pub keep_alive: bool,
     /// The request method was `HEAD`; the response must not carry a body.
     pub head: bool,
+    /// Separators used by [`Request::query_params`] and [`Request::form_params`].
+    pub form_separators: FormSeparators,
 }
 
 impl Request {
@@ -122,7 +153,7 @@ impl Request {
 
     /// The first query parameter called `name`, percent-decoded once.
     pub fn query_param(&self, name: &str) -> Option<String> {
-        for (k, v) in parse_form(self.query().as_bytes()) {
+        for (k, v) in parse_form_with(self.query().as_bytes(), self.form_separators) {
             if k == name {
                 return Some(v);
             }
@@ -132,7 +163,7 @@ impl Request {
 
     /// Every query parameter in request order, percent-decoded once.
     pub fn query_params(&self) -> Vec<(String, String)> {
-        parse_form(self.query().as_bytes())
+        parse_form_with(self.query().as_bytes(), self.form_separators)
     }
 
     /// Parse the request body as form fields.
@@ -148,13 +179,13 @@ impl Request {
     /// multipart parser (for example `fador_core::multipart`).
     pub fn form_params(&self) -> Vec<(String, String)> {
         let Some(content_type) = self.content_type() else {
-            return parse_form(&self.body);
+            return parse_form_with(&self.body, self.form_separators);
         };
         if is_multipart_media_type(content_type) {
             return parse_multipart_form(content_type, &self.body);
         }
         if is_urlencoded_media_type(content_type) {
-            return parse_form(&self.body);
+            return parse_form_with(&self.body, self.form_separators);
         }
         Vec::new()
     }
@@ -458,6 +489,13 @@ pub struct HttpConfig {
     /// [`FILE_CONTENT_LENGTH_LIMIT`] for the reference board's behaviour, or to
     /// `u64::MAX` to chunk every file body.
     pub file_content_length_limit: u64,
+    /// Chunk an in-memory HTTP/1.1 body instead of sending `Content-Length`.
+    ///
+    /// Defaults to `true`. Set it to `false` when the application must keep the
+    /// old `Content-Length` wire shape for dynamic pages.
+    pub chunk_in_memory_bodies: bool,
+    /// Separators accepted in query strings and urlencoded form bodies.
+    pub form_separators: FormSeparators,
     /// `Content-Security-Policy` header. Empty omits it.
     pub content_security_policy: String,
     /// `X-Frame-Options` header. Empty omits it.
@@ -497,6 +535,8 @@ impl Default for HttpConfig {
             allowed_hosts: Vec::new(),
             canonical_scheme: None,
             file_content_length_limit: 0,
+            chunk_in_memory_bodies: true,
+            form_separators: FormSeparators::default(),
             content_security_policy: String::new(),
             frame_options: String::new(),
             referrer_policy: String::new(),
@@ -958,6 +998,7 @@ fn read_request<R: BufRead>(
         http11,
         keep_alive,
         head: method == "HEAD",
+        form_separators: config.form_separators,
     }))
 }
 
@@ -1175,7 +1216,7 @@ pub fn prepare_response(
         && !ranged
         && len > 0
         && match &resp.body {
-            Body::Bytes(_) => true,
+            Body::Bytes(_) => config.chunk_in_memory_bodies,
             // A small file body is re-framed as chunks when the application
             // opted into the reference board's policy; a large download keeps
             // its length so the client can show progress and resume.
@@ -1622,6 +1663,48 @@ mod tests {
             Some("application/x-www-form-urlencoded")
         );
         assert!(!request.is_multipart_form());
+    }
+
+    #[test]
+    fn form_separators_are_configurable() {
+        let cfg = HttpConfig {
+            form_separators: FormSeparators::AMPERSAND_AND_SEMICOLON,
+            ..test_config()
+        };
+        let request = parse(b"GET /?a=1;b=2&c=3 HTTP/1.1\r\nHost: x\r\n\r\n", &cfg)
+            .ok()
+            .flatten()
+            .expect("valid request");
+        assert_eq!(
+            request.query_params(),
+            vec![
+                ("a".into(), "1".into()),
+                ("b".into(), "2".into()),
+                ("c".into(), "3".into()),
+            ]
+        );
+
+        let default = parse(b"GET /?a=1;b=2 HTTP/1.1\r\nHost: x\r\n\r\n", &test_config())
+            .ok()
+            .flatten()
+            .expect("valid request");
+        assert_eq!(default.query_params(), vec![("a".into(), "1;b=2".into())]);
+    }
+
+    #[test]
+    fn in_memory_bodies_can_keep_content_length() {
+        let cfg = HttpConfig {
+            chunk_in_memory_bodies: false,
+            ..test_config()
+        };
+        let wire = prepare_response(
+            &cfg,
+            Response::html(200, "OK", "hello".into()),
+            &FramingOptions::default(),
+        );
+        assert_eq!(wire.framing, Framing::ContentLength(5));
+        assert!(wire.head.contains("Content-Length: 5\r\n"));
+        assert!(!wire.head.contains("Transfer-Encoding:"));
     }
 
     #[test]

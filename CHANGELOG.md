@@ -3,6 +3,30 @@
 All notable changes to this workspace are documented here. Versions are
 lockstep across all crates while the workspace is `0.x`.
 
+## 0.1.1 - 2026-11-02
+
+### Added
+
+- `fador-compress`: the `deflate` and `inflate` modules are public, and
+  `inflate_gzip_or_raw` / `inflate_gzip_or_raw_with_limit` handle the
+  MediaWiki gzip-else-raw storage shape without treating a raw stream as zlib.
+- `fador-core`: `format_bytes_with_units`, `BINARY_UNITS` and `FINNISH_UNITS`;
+  `html_escape_compat` now normalises NUL to U+FFFD; PHP serialisation gained
+  `unserialize_with_budget`, `PhpScalar`, `parse_scalar_map` and
+  `serialize_scalar_map`.
+- `fador-http`: `FormSeparators` with `HttpConfig::form_separators`, public
+  `parse_form` / `parse_form_with`, per-request separator-aware query and form
+  parsing, and `HttpConfig::chunk_in_memory_bodies` for applications that must
+  keep the old `Content-Length` dynamic-body framing.
+- `fador-markup`: `CensorBoundary::{Word,Smf}` and
+  `Censor::with_case_insensitive` for SMF-compatible censor boundaries and
+  case-sensitive matching.
+- `fador-i18n`: `Tzdb::empty()`.
+
+### Changed
+
+- All crates are versioned `0.1.1`.
+
 ## 0.1.0 - 2026-11-01
 
 ### Added

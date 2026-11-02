@@ -21,8 +21,8 @@
 #![warn(missing_docs)]
 
 mod checksum;
-mod deflate;
-mod inflate;
+pub mod deflate;
+pub mod inflate;
 
 #[cfg(test)]
 mod testutil;
@@ -30,6 +30,7 @@ mod testutil;
 pub use checksum::{adler32, crc32};
 pub use deflate::{deflate_compress, gzip_compress, zlib_compress};
 pub use inflate::{
-    gzip_decompress, gzip_decompress_with_limit, inflate, inflate_raw, inflate_raw_with_limit,
-    inflate_with_limit, zlib_decompress, zlib_decompress_with_limit, Error, DEFAULT_MAX_OUTPUT,
+    gzip_decompress, gzip_decompress_with_limit, inflate, inflate_gzip_or_raw,
+    inflate_gzip_or_raw_with_limit, inflate_raw, inflate_raw_with_limit, inflate_with_limit,
+    zlib_decompress, zlib_decompress_with_limit, Error, DEFAULT_MAX_OUTPUT,
 };

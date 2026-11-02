@@ -3,7 +3,7 @@
 //! The encoder uses a bounded hash-chain LZ77 matcher. Fixed Huffman coding
 //! keeps the encoder small (no dynamic code tables) while still shrinking
 //! ordinary HTML, JavaScript, CSS, JSON and PNG IDAT data substantially. The
-//! decoder in [`crate::inflate`] is the test oracle.
+//! decoder in [`mod@crate::inflate`] is the test oracle.
 
 use crate::checksum::{adler32, crc32};
 

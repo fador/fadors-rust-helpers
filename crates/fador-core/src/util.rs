@@ -36,6 +36,7 @@ pub fn html_escape_compat(input: &str) -> String {
             '<' => out.push_str("&lt;"),
             '>' => out.push_str("&gt;"),
             '"' => out.push_str("&quot;"),
+            '\0' => out.push('\u{fffd}'),
             _ => out.push(ch),
         }
     }
@@ -707,23 +708,34 @@ pub fn sanitize_filename(name: &str) -> String {
     out
 }
 
+/// The default binary byte units.
+pub const BINARY_UNITS: [&str; 5] = ["B", "KiB", "MiB", "GiB", "TiB"];
+/// The Finnish byte units used by the original boards.
+pub const FINNISH_UNITS: [&str; 5] = ["tavua", "kt", "Mt", "Gt", "Tt"];
+
 /// Format a byte count with binary units (B, KiB, MiB, GiB, TiB).
 pub fn format_bytes(n: u64) -> String {
-    const UNITS: [&str; 5] = ["B", "KiB", "MiB", "GiB", "TiB"];
+    format_bytes_with_units(n, &BINARY_UNITS)
+}
+
+/// Format a byte count with caller-supplied binary units.
+///
+/// The units are ordered from bytes to terabytes and must contain five entries.
+pub fn format_bytes_with_units(n: u64, units: &[&str; 5]) -> String {
     let mut value = n as f64;
     let mut unit = 0;
-    while value >= 1024.0 && unit < UNITS.len() - 1 {
+    while value >= 1024.0 && unit < units.len() - 1 {
         value /= 1024.0;
         unit += 1;
     }
     if unit == 0 {
-        format!("{} {}", n, UNITS[0])
+        format!("{} {}", n, units[0])
     } else if value >= 100.0 {
-        format!("{:.0} {}", value, UNITS[unit])
+        format!("{:.0} {}", value, units[unit])
     } else if value >= 10.0 {
-        format!("{:.1} {}", value, UNITS[unit])
+        format!("{:.1} {}", value, units[unit])
     } else {
-        format!("{:.2} {}", value, UNITS[unit])
+        format!("{:.2} {}", value, units[unit])
     }
 }
 
@@ -890,6 +902,18 @@ mod tests {
             html_escape_compat("<a href=\"x\">'&"),
             "&lt;a href=&quot;x&quot;&gt;'&amp;"
         );
+    }
+
+    #[test]
+    fn compat_escape_normalises_nul() {
+        assert_eq!(html_escape_compat("a\0b"), "a\u{fffd}b");
+    }
+
+    #[test]
+    fn formats_bytes_with_either_unit_set() {
+        assert_eq!(format_bytes(1536), "1.50 KiB");
+        assert_eq!(format_bytes_with_units(1536, &FINNISH_UNITS), "1.50 kt");
+        assert_eq!(format_bytes_with_units(0, &FINNISH_UNITS), "0 tavua");
     }
 
     #[test]

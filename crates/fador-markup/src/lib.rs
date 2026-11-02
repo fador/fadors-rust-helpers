@@ -48,7 +48,7 @@ mod html;
 mod strip;
 mod url;
 
-pub use censor::Censor;
+pub use censor::{Censor, CensorBoundary};
 pub use code::{
     match_longest_code, replace_codes, smiley_boundary_after, smiley_boundary_before, strtr,
 };

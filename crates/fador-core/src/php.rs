@@ -41,6 +41,54 @@ pub enum PhpKey {
     Str(String),
 }
 
+/// A scalar-only PHP value for flat settings maps.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PhpScalar {
+    /// `null`.
+    Null,
+    /// A boolean.
+    Bool(bool),
+    /// An integer.
+    Int(i64),
+    /// A string.
+    Str(String),
+}
+
+impl PhpScalar {
+    /// Return the string value, if this is a string.
+    pub fn as_str(&self) -> Option<&str> {
+        match self {
+            Self::Str(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    /// Return the integer value, if this is an integer.
+    pub fn as_i64(&self) -> Option<i64> {
+        match self {
+            Self::Int(value) => Some(*value),
+            _ => None,
+        }
+    }
+
+    /// Return the boolean value, if this is a boolean.
+    pub fn as_bool(&self) -> Option<bool> {
+        match self {
+            Self::Bool(value) => Some(*value),
+            _ => None,
+        }
+    }
+
+    fn to_value(&self) -> PhpValue {
+        match self {
+            Self::Null => PhpValue::Null,
+            Self::Bool(value) => PhpValue::Bool(*value),
+            Self::Int(value) => PhpValue::Int(*value),
+            Self::Str(value) => PhpValue::Str(value.clone()),
+        }
+    }
+}
+
 /// A serialisation failure.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PhpError {
@@ -220,7 +268,16 @@ fn write_value(out: &mut String, value: &PhpValue, depth: usize) -> Result<(), P
 /// Trailing bytes, duplicate keys, objects, references and invalid UTF-8 are
 /// rejected.
 pub fn unserialize(input: &str) -> Result<PhpValue, PhpError> {
-    if input.len() > MAX_SERIALIZED_BYTES {
+    unserialize_with_budget(input, MAX_SERIALIZED_BYTES)
+}
+
+/// Parse a PHP value with an explicit input budget.
+///
+/// The budget is clamped to `1..=16 MiB`; the depth and entry caps are the
+/// same as [`unserialize`].
+pub fn unserialize_with_budget(input: &str, max_bytes: usize) -> Result<PhpValue, PhpError> {
+    let max_bytes = max_bytes.clamp(1, 16 * 1024 * 1024);
+    if input.len() > max_bytes {
         return Err(PhpError::Limit("serialised value is too large".into()));
     }
     let mut parser = Parser {
@@ -233,6 +290,55 @@ pub fn unserialize(input: &str) -> Result<PhpValue, PhpError> {
         return Err(PhpError::Format("trailing serialised data".into()));
     }
     Ok(value)
+}
+
+/// Parse a flat PHP array whose keys are strings and whose values are scalars.
+///
+/// This is the shape of a board settings row. Nested arrays and floats are
+/// rejected.
+pub fn parse_scalar_map(
+    input: &str,
+    max_bytes: usize,
+) -> Result<Vec<(String, PhpScalar)>, PhpError> {
+    let value = unserialize_with_budget(input, max_bytes)?;
+    let PhpValue::Array(items) = value else {
+        return Err(PhpError::Format("expected a serialised array".into()));
+    };
+    let mut out = Vec::with_capacity(items.len());
+    for (key, value) in items {
+        let PhpKey::Str(key) = key else {
+            return Err(PhpError::Format("scalar map keys must be strings".into()));
+        };
+        let value = match value {
+            PhpValue::Null => PhpScalar::Null,
+            PhpValue::Bool(value) => PhpScalar::Bool(value),
+            PhpValue::Int(value) => PhpScalar::Int(value),
+            PhpValue::Str(value) => PhpScalar::Str(value),
+            PhpValue::Float(_) => {
+                return Err(PhpError::Format(
+                    "scalar map values must not be floats".into(),
+                ))
+            }
+            PhpValue::Array(_) => {
+                return Err(PhpError::Format(
+                    "scalar map values must not be arrays".into(),
+                ))
+            }
+        };
+        out.push((key, value));
+    }
+    Ok(out)
+}
+
+/// Serialise a flat scalar map as a PHP array.
+pub fn serialize_scalar_map(items: &[(String, PhpScalar)]) -> Result<String, PhpError> {
+    let value = PhpValue::Array(
+        items
+            .iter()
+            .map(|(key, value)| (PhpKey::Str(key.clone()), value.to_value()))
+            .collect(),
+    );
+    serialize(&value)
 }
 
 struct Parser<'a> {
@@ -409,6 +515,38 @@ mod tests {
             serialize(&PhpValue::assoc([("a", PhpValue::Int(1))])).unwrap(),
             "a:1:{s:1:\"a\";i:1;}"
         );
+    }
+
+    #[test]
+    fn scalar_maps_roundtrip() {
+        let items = vec![
+            ("enabled".to_string(), PhpScalar::Bool(true)),
+            ("count".to_string(), PhpScalar::Int(7)),
+            ("name".to_string(), PhpScalar::Str("board".to_string())),
+            ("none".to_string(), PhpScalar::Null),
+        ];
+        let encoded = serialize_scalar_map(&items).unwrap();
+        assert_eq!(parse_scalar_map(&encoded, 4096).unwrap(), items);
+    }
+
+    #[test]
+    fn scalar_maps_reject_nested_and_float_values() {
+        let nested = serialize(&PhpValue::assoc([(
+            "a",
+            PhpValue::Array(vec![(PhpKey::Int(0), PhpValue::Int(1))]),
+        )]))
+        .unwrap();
+        assert!(parse_scalar_map(&nested, 4096).is_err());
+
+        let float = serialize(&PhpValue::assoc([("a", PhpValue::Float(1.5))])).unwrap();
+        assert!(parse_scalar_map(&float, 4096).is_err());
+    }
+
+    #[test]
+    fn explicit_budget_is_enforced() {
+        let encoded = serialize(&PhpValue::Str("x".repeat(64))).unwrap();
+        assert!(unserialize_with_budget(&encoded, encoded.len()).is_ok());
+        assert!(unserialize_with_budget(&encoded, encoded.len() - 1).is_err());
     }
 
     #[test]

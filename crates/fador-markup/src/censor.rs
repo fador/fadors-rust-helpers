@@ -17,6 +17,16 @@ struct Rule {
     replacement: Option<String>,
 }
 
+/// Which characters count as a word boundary.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CensorBoundary {
+    /// Any character that is not alphanumeric and not `_`.
+    #[default]
+    Word,
+    /// The exact punctuation set used by SMF 2.x.
+    Smf,
+}
+
 /// A word censor.
 ///
 /// ```
@@ -25,15 +35,39 @@ struct Rule {
 /// let censor = Censor::new().with_word("damn");
 /// assert_eq!(censor.apply("Damn it, damnation"), "**** it, damnation");
 /// ```
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Censor {
     rules: Vec<Rule>,
+    boundary: CensorBoundary,
+    case_insensitive: bool,
+}
+
+impl Default for Censor {
+    fn default() -> Self {
+        Self {
+            rules: Vec::new(),
+            boundary: CensorBoundary::Word,
+            case_insensitive: true,
+        }
+    }
 }
 
 impl Censor {
     /// An empty censor that leaves every text unchanged.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Select the word-boundary rule.
+    pub fn with_boundary(mut self, boundary: CensorBoundary) -> Self {
+        self.boundary = boundary;
+        self
+    }
+
+    /// Select case-sensitive (`false`) or case-insensitive (`true`) matching.
+    pub fn with_case_insensitive(mut self, case_insensitive: bool) -> Self {
+        self.case_insensitive = case_insensitive;
+        self
     }
 
     /// Add a word that is replaced with one asterisk per character.
@@ -81,9 +115,13 @@ impl Censor {
         let mut index = 0usize;
         while index < text.len() {
             let rest = &text[index..];
-            if previous.is_none_or(is_boundary) {
+            if previous.is_none_or(|ch| self.is_boundary(ch)) {
                 if let Some((len, rule)) = self.match_at(rest) {
-                    if rest[len..].chars().next().is_none_or(is_boundary) {
+                    if rest[len..]
+                        .chars()
+                        .next()
+                        .is_none_or(|ch| self.is_boundary(ch))
+                    {
                         match &rule.replacement {
                             Some(replacement) => out.push_str(replacement),
                             None => {
@@ -108,11 +146,42 @@ impl Censor {
     /// Longest rule that matches at the start of `rest`, with its byte length.
     fn match_at(&self, rest: &str) -> Option<(usize, &Rule)> {
         for rule in &self.rules {
-            if let Some(len) = match_prefix_ci(rest, &rule.word) {
+            let matched = if self.case_insensitive {
+                match_prefix_ci(rest, &rule.word)
+            } else {
+                rest.starts_with(&rule.word).then_some(rule.word.len())
+            };
+            if let Some(len) = matched {
                 return Some((len, rule));
             }
         }
         None
+    }
+
+    fn is_boundary(&self, ch: char) -> bool {
+        match self.boundary {
+            CensorBoundary::Word => !(ch.is_alphanumeric() || ch == '_'),
+            CensorBoundary::Smf => {
+                ch.is_whitespace()
+                    || matches!(
+                        ch,
+                        '>' | '.'
+                            | '-'
+                            | ','
+                            | ';'
+                            | ':'
+                            | '!'
+                            | '?'
+                            | '('
+                            | ')'
+                            | '['
+                            | ']'
+                            | '"'
+                            | '\''
+                            | '&'
+                    )
+            }
+        }
     }
 
     /// Insert a rule and keep the list ordered longest word first.
@@ -134,11 +203,6 @@ impl Censor {
         self.rules
             .sort_by_key(|rule| std::cmp::Reverse(rule.word.chars().count()));
     }
-}
-
-/// Whether `ch` may sit next to a censored word.
-fn is_boundary(ch: char) -> bool {
-    !(ch.is_alphanumeric() || ch == '_')
 }
 
 #[cfg(test)]
@@ -222,6 +286,19 @@ mod tests {
         let mut out = String::from(">");
         censor.apply_into("damn", &mut out);
         assert_eq!(out, ">****");
+    }
+
+    #[test]
+    fn smf_boundary_and_case_policy() {
+        let smf = Censor::new()
+            .with_word("damn")
+            .with_boundary(CensorBoundary::Smf);
+        assert_eq!(smf.apply("damn."), "****.");
+        assert_eq!(smf.apply("damn<"), "damn<");
+        assert_eq!(smf.apply("xdamn"), "xdamn");
+
+        let case_sensitive = Censor::new().with_word("damn").with_case_insensitive(false);
+        assert_eq!(case_sensitive.apply("Damn damn"), "Damn ****");
     }
 
     #[test]

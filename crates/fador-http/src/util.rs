@@ -3,6 +3,7 @@
 //! Keeping these here makes the server crate depend only on `std`, so it can be
 //! reused without pulling in an application.
 
+use crate::FormSeparators;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Hard upper bound on the number of fields one form body may produce.
@@ -38,13 +39,20 @@ fn hex_val(b: u8) -> Option<u8> {
 
 /// Parse `application/x-www-form-urlencoded` data with a bounded field count.
 ///
-/// Only `&` separates fields: `;` is a literal byte, unlike PHP's legacy
-/// `arg_separator.input`. Repeated names are preserved in order and a pair
-/// without `=` yields an empty value.
-pub(crate) fn parse_form(input: &[u8]) -> Vec<(String, String)> {
+/// Only `&` separates fields; use [`parse_form_with`] for the legacy PHP
+/// `arg_separator.input` behaviour that also splits on `;`. Repeated names are
+/// preserved in order and a pair without `=` yields an empty value.
+pub fn parse_form(input: &[u8]) -> Vec<(String, String)> {
+    parse_form_with(input, FormSeparators::default())
+}
+
+/// Parse urlencoded data with the caller's separator policy.
+pub fn parse_form_with(input: &[u8], separators: FormSeparators) -> Vec<(String, String)> {
     let text = String::from_utf8_lossy(input);
     let mut out = Vec::new();
-    for pair in text.split('&').take(MAX_FORM_FIELDS) {
+    let split =
+        |ch: char| (ch == '&' && separators.ampersand) || (ch == ';' && separators.semicolon);
+    for pair in text.split(split).take(MAX_FORM_FIELDS) {
         if pair.is_empty() {
             continue;
         }

@@ -74,6 +74,25 @@ pub fn inflate_with_limit(data: &[u8], max_output: usize) -> Result<Vec<u8>, Err
     }
 }
 
+/// Decompress a gzip member or, when the gzip magic is absent, a raw DEFLATE
+/// stream with the default limit.
+///
+/// This is the MediaWiki `old_flags` shape: the row is either gzip-wrapped or
+/// raw DEFLATE, never zlib-wrapped. Use [`inflate`] when a zlib wrapper is also
+/// possible.
+pub fn inflate_gzip_or_raw(data: &[u8]) -> Result<Vec<u8>, Error> {
+    inflate_gzip_or_raw_with_limit(data, DEFAULT_MAX_OUTPUT)
+}
+
+/// Decompress a gzip member or a raw DEFLATE stream with an explicit limit.
+pub fn inflate_gzip_or_raw_with_limit(data: &[u8], max_output: usize) -> Result<Vec<u8>, Error> {
+    if data.len() >= 2 && data[0] == 0x1f && data[1] == 0x8b {
+        gzip_decompress_with_limit(data, max_output)
+    } else {
+        inflate_raw_with_limit(data, max_output)
+    }
+}
+
 /// Decompress a raw DEFLATE stream with the default limit.
 pub fn inflate_raw(data: &[u8]) -> Result<Vec<u8>, Error> {
     inflate_raw_with_limit(data, DEFAULT_MAX_OUTPUT)
@@ -600,6 +619,19 @@ mod tests {
             gzip_decompress(GZIP_HELLO).unwrap(),
             b"hello hello hello hello hello"
         );
+    }
+
+    #[test]
+    fn gzip_or_raw_dispatch() {
+        assert_eq!(
+            inflate_gzip_or_raw(GZIP_HELLO).unwrap(),
+            b"hello hello hello hello hello"
+        );
+        assert_eq!(
+            inflate_gzip_or_raw(RAW_HELLO).unwrap(),
+            b"hello hello hello hello hello"
+        );
+        assert!(inflate_gzip_or_raw(ZLIB_HELLO).is_err());
     }
 
     #[test]
