@@ -815,7 +815,14 @@ fn read_request_with_stream<R: BufRead>(
             .max_header_bytes
             .saturating_sub(header_bytes)
             .max(1024);
-        let n = match read_line_bounded(reader, &mut h, remaining, &mut deadline, read_budget, stream) {
+        let n = match read_line_bounded(
+            reader,
+            &mut h,
+            remaining,
+            &mut deadline,
+            read_budget,
+            stream,
+        ) {
             Ok(n) => n,
             Err(LineError::TooLong) => {
                 return Err(Response::text(

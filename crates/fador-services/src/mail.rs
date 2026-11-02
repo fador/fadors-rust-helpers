@@ -995,7 +995,8 @@ fn authenticate(
     reader: &mut BufReader<TcpStream>,
     mechanisms: &[String],
 ) -> Result<(), MailError> {
-    if config.username.contains(['\0', '\r', '\n']) || config.password.contains(['\0', '\r', '\n']) {
+    if config.username.contains(['\0', '\r', '\n']) || config.password.contains(['\0', '\r', '\n'])
+    {
         return Err(MailError::Protocol(
             "SMTP credentials must not contain NUL, CR, or LF".into(),
         ));

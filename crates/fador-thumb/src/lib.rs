@@ -296,7 +296,9 @@ pub fn render(data: &[u8], format: Format, width: u32, height: u32) -> Result<Ve
         return Err("target size is empty".to_string());
     }
     if width > MAX_DIMENSION || height > MAX_DIMENSION {
-        return Err(format!("target size exceeds maximum dimension {MAX_DIMENSION}"));
+        return Err(format!(
+            "target size exceeds maximum dimension {MAX_DIMENSION}"
+        ));
     }
     if u64::from(width) * u64::from(height) * 4 > MAX_ALLOCATION {
         return Err("target size exceeds maximum allocation".to_string());

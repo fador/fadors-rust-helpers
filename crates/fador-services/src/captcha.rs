@@ -1375,8 +1375,11 @@ mod tests {
         ));
         assert!(!accepts(&empty_secret, "token", "127.0.0.1"));
 
-        let invalid_authority =
-            ProviderConfig::new(Provider::Turnstile, "sec", "http://user:pass@127.0.0.1/verify");
+        let invalid_authority = ProviderConfig::new(
+            Provider::Turnstile,
+            "sec",
+            "http://user:pass@127.0.0.1/verify",
+        );
         assert!(matches!(
             verify_provider(&invalid_authority, "token", "127.0.0.1"),
             Err(ProviderError::Config(_))

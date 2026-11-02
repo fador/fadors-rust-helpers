@@ -413,22 +413,15 @@ mod tests {
             sanitize_attrs("src=\"https://cdn.test/x.png\""),
             " src=\"https://cdn.test/x.png\""
         );
-        assert!(
-            !sanitize_attrs("data-x\"onclick=\"alert(1)\"")
-                .to_ascii_lowercase()
-                .contains("onclick")
-        );
-        assert!(
-            !sanitize_attrs("data-x'onclick='alert(1)'")
-                .to_ascii_lowercase()
-                .contains("onclick")
-        );
+        assert!(!sanitize_attrs("data-x\"onclick=\"alert(1)\"")
+            .to_ascii_lowercase()
+            .contains("onclick"));
+        assert!(!sanitize_attrs("data-x'onclick='alert(1)'")
+            .to_ascii_lowercase()
+            .contains("onclick"));
         assert_eq!(sanitize_attrs("style=\"background:\u{2}0\u{2}\""), "");
         assert_eq!(sanitize_attrs("href=\"\u{2}0\u{2}\""), "");
-        assert_eq!(
-            sanitize_attrs("title=\"\u{1}TOC\u{1}\""),
-            " title=\"TOC\""
-        );
+        assert_eq!(sanitize_attrs("title=\"\u{1}TOC\u{1}\""), " title=\"TOC\"");
     }
 
     #[test]

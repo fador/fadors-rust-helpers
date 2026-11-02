@@ -415,7 +415,11 @@ fn response_reason_cannot_inject_headers() {
     let cfg = config();
     let resp = Response::text(200, "OK\r\nX-Injected: yes", "hello".into());
     let wire = prepare_response(&cfg, resp, &FramingOptions::default());
-    assert!(wire.head.starts_with("HTTP/1.1 200 OK\r\n"), "{}", wire.head);
+    assert!(
+        wire.head.starts_with("HTTP/1.1 200 OK\r\n"),
+        "{}",
+        wire.head
+    );
     assert!(!wire.head.contains("X-Injected"));
 }
 
@@ -458,4 +462,3 @@ fn slowloris_header_trickle_and_keep_alive_idle_timeout_are_enforced() {
         "slowloris trickle must time out: {text}"
     );
 }
-

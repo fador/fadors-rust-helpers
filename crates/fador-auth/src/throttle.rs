@@ -492,7 +492,10 @@ impl LoginAttemptStore for MemoryLoginAttemptStore {
             let cutoff = attempt.now.saturating_sub(86_400);
             rows.retain(|row| row.at >= cutoff);
             if rows.len() >= self.capacity {
-                let index = rows.iter().position(|row| row.user_id.is_none()).unwrap_or(0);
+                let index = rows
+                    .iter()
+                    .position(|row| row.user_id.is_none())
+                    .unwrap_or(0);
                 rows.remove(index);
             }
         }
@@ -783,9 +786,15 @@ mod tests {
 
         // Prefers evicting unknown-user attempts over known-user attempts.
         let store = MemoryLoginAttemptStore::new(2);
-        store.record(&attempt(Some(7), "192.0.2.1", 1_000, false)).unwrap();
-        store.record(&attempt(None, "192.0.2.2", 1_001, false)).unwrap();
-        store.record(&attempt(None, "192.0.2.3", 1_002, false)).unwrap();
+        store
+            .record(&attempt(Some(7), "192.0.2.1", 1_000, false))
+            .unwrap();
+        store
+            .record(&attempt(None, "192.0.2.2", 1_001, false))
+            .unwrap();
+        store
+            .record(&attempt(None, "192.0.2.3", 1_002, false))
+            .unwrap();
         assert_eq!(store.user_failures(7, 0).unwrap(), 1);
     }
 }

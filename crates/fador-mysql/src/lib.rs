@@ -512,7 +512,9 @@ impl Connection {
         // charset already selected utf8mb4_general_ci.
         let _ = conn.execute("SET NAMES utf8mb4");
         if conn.broken {
-            return Err(MysqlError::Protocol("initial SET NAMES utf8mb4 failed".into()));
+            return Err(MysqlError::Protocol(
+                "initial SET NAMES utf8mb4 failed".into(),
+            ));
         }
         Ok(conn)
     }
@@ -578,12 +580,10 @@ impl Connection {
                 return Err(e);
             }
         };
-        let first = *packet
-            .first()
-            .ok_or_else(|| {
-                self.broken = true;
-                MysqlError::Protocol("empty query response".into())
-            })?;
+        let first = *packet.first().ok_or_else(|| {
+            self.broken = true;
+            MysqlError::Protocol("empty query response".into())
+        })?;
         match first {
             0x00 => {
                 let (affected, insert_id, status_flags) = parse_ok(&packet);

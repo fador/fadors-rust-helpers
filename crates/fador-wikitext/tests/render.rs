@@ -660,12 +660,16 @@ fn raw_html_is_filtered() {
     assert!(!html.contains("<div data-x"), "{html}");
     assert!(!html.contains("<div onclick"), "{html}");
 
-    let html = render("<div style=\"background:<nowiki>url(javascript:alert(1))</nowiki>\">x</div>");
+    let html =
+        render("<div style=\"background:<nowiki>url(javascript:alert(1))</nowiki>\">x</div>");
     assert!(!html.to_ascii_lowercase().contains("url("), "{html}");
     assert!(!html.to_ascii_lowercase().contains("javascript:"), "{html}");
 
     let html = render("<a href=\"<nowiki>javascript:alert(1)</nowiki>\">x</a>");
-    assert!(!html.to_ascii_lowercase().contains("href=\"javascript:"), "{html}");
+    assert!(
+        !html.to_ascii_lowercase().contains("href=\"javascript:"),
+        "{html}"
+    );
 
     let html = render("<div title=\"__TOC__\">x</div>\n== One ==\nA\n== Two ==\nB\n== Three ==\nC\n== Four ==\nD\n");
     assert!(!html.contains("title=\"<div"), "{html}");
@@ -681,7 +685,8 @@ fn padleft_and_sub_and_template_comments_are_hardened() {
 
     // Internal marker bytes in a stored template are neutralised like the
     // page source is.
-    let resolver = MemoryResolver::new().with_page(10, "Commented", "A<!-- secret -->B\r\nC\u{2}0\u{2}");
+    let resolver =
+        MemoryResolver::new().with_page(10, "Commented", "A<!-- secret -->B\r\nC\u{2}0\u{2}");
     let html = render_with(&resolver, &config(), "{{Commented}}");
     assert!(!html.contains("secret"), "{html}");
     assert!(!html.contains('\u{2}'), "{html}");

@@ -583,9 +583,7 @@ impl<'a> Renderer<'a> {
         } else {
             process_template_source(&raw)
         };
-        processed = strip_comments(&normalize_source(
-            processed.trim_start_matches('\u{feff}'),
-        ));
+        processed = strip_comments(&normalize_source(processed.trim_start_matches('\u{feff}')));
         self.ctx.cache.templates.put(key, Some(processed.clone()));
         Some(processed)
     }

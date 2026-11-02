@@ -242,7 +242,10 @@ mod tests {
     fn preserves_intentional_trailing_newlines_in_multipart_fields() {
         let body = b"--XyZ\r\nContent-Disposition: form-data; name=\"message\"\r\n\r\nline1\r\n\r\n\r\n--XyZ--\r\n";
         let fields = parse_multipart_form("multipart/form-data; boundary=XyZ", body);
-        assert_eq!(fields, vec![("message".to_string(), "line1\r\n\r\n".to_string())]);
+        assert_eq!(
+            fields,
+            vec![("message".to_string(), "line1\r\n\r\n".to_string())]
+        );
     }
 
     #[test]

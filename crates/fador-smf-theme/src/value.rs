@@ -352,9 +352,7 @@ impl Value {
             Value::Int(value) => Value::Int(*value),
             Value::Float(value) => Value::Float(*value),
             Value::Str(value) => Value::Str(value.clone()),
-            Value::Array(array) => {
-                Value::from_array(array.borrow().deep_clone_bounded(depth + 1))
-            }
+            Value::Array(array) => Value::from_array(array.borrow().deep_clone_bounded(depth + 1)),
             Value::Function(function) => Value::Function(function.clone()),
         }
     }
@@ -474,10 +472,7 @@ impl Value {
                     let Some(other) = b.get(key) else {
                         return false;
                     };
-                    if !value
-                        .borrow()
-                        .strict_eq_bounded(&other.borrow(), depth + 1)
-                    {
+                    if !value.borrow().strict_eq_bounded(&other.borrow(), depth + 1) {
                         return false;
                     }
                 }

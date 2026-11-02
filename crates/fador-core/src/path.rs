@@ -23,8 +23,8 @@ use std::path::{Component, Path, PathBuf};
 /// The device names Windows resolves before looking at the directory entry.
 const RESERVED_DEVICES: &[&str] = &[
     "CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$", "COM1", "COM2", "COM3", "COM4", "COM5",
-    "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7",
-    "LPT8", "LPT9",
+    "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8",
+    "LPT9",
 ];
 
 /// Whether a single name (without an extension) is a reserved device name.
@@ -299,8 +299,11 @@ mod tests {
         let temp = Temp::new();
         let root = temp.root();
         std::os::unix::fs::symlink(temp.0.join("outside.txt"), root.join("link.txt")).unwrap();
-        std::os::unix::fs::symlink(temp.0.join("missing_outside.txt"), root.join("dangling.txt"))
-            .unwrap();
+        std::os::unix::fs::symlink(
+            temp.0.join("missing_outside.txt"),
+            root.join("dangling.txt"),
+        )
+        .unwrap();
         std::os::unix::fs::symlink(&temp.0, root.join("linkdir")).unwrap();
         assert!(!is_inside(&root, &root.join("link.txt")));
         assert!(!is_inside(&root, &root.join("dangling.txt")));

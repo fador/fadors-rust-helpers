@@ -770,7 +770,10 @@ mod tests {
         // The legacy `LA_` form always applies the JavaScript strategy.
         assert_eq!(render_escaped("{LA_HELLO}"), "Hei");
         assert_eq!(render_escaped("{LA_DANGER}"), "\\'\\u003Cscript\\u003E\\'");
-        assert_eq!(render_escaped("{{ LA_DANGER }}"), "\\'\\u003Cscript\\u003E\\'");
+        assert_eq!(
+            render_escaped("{{ LA_DANGER }}"),
+            "\\'\\u003Cscript\\u003E\\'"
+        );
     }
 
     #[test]
